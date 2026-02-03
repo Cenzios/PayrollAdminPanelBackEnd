@@ -1,15 +1,13 @@
 import { Router } from 'express';
 import {
-  getRevenueStats,
-  getRevenueByPeriod,
+  getRevenueSummary,
+  getAllInvoices,
 } from '../controllers/adminRevenue.controller';
-import { protectAdmin } from '../middlewares/adminAuth.middleware';
+import { requireSuperAdmin } from '../middlewares/requireSuperAdmin.middleware';
 
 const router = Router();
 
-router.use(protectAdmin);
-
-router.get('/stats', getRevenueStats);
-router.get('/period', getRevenueByPeriod);
+router.get('/summary', requireSuperAdmin, getRevenueSummary);
+router.get('/invoices', requireSuperAdmin, getAllInvoices);
 
 export default router;

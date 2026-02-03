@@ -1,15 +1,13 @@
 import { Router } from 'express';
 import {
   getAllSubscriptions,
-  getSubscriptionStats,
+  getSubscriptionTimeline,
 } from '../controllers/adminSubscriptions.controller';
-import { protectAdmin } from '../middlewares/adminAuth.middleware';
+import { requireSuperAdmin } from '../middlewares/requireSuperAdmin.middleware';
 
 const router = Router();
 
-router.use(protectAdmin);
-
-router.get('/', getAllSubscriptions);
-router.get('/stats', getSubscriptionStats);
+router.get('/', requireSuperAdmin, getAllSubscriptions);
+router.get('/user/:userId', requireSuperAdmin, getSubscriptionTimeline);
 
 export default router;

@@ -48,11 +48,11 @@ app.use('/api/auth', authRoutes);
 
 // Admin Routes (Protected)
 app.use('/api/admin/dashboard', dashboardRoutes); // Protected inside the route file
-app.use('/api/admin/users', requireSuperAdmin, usersRoutes);
-app.use('/api/admin/subscriptions', requireSuperAdmin, subscriptionsRoutes);
+app.use('/api/admin/users', usersRoutes); // Protected inside the route file
+app.use('/api/admin/subscriptions', subscriptionsRoutes); // Protected inside the route file
 app.use('/api/admin/security', requireSuperAdmin, securityRoutes);
 app.use('/api/admin/audit', requireSuperAdmin, auditRoutes);
-app.use('/api/admin/revenue', requireSuperAdmin, revenueRoutes);
+app.use('/api/admin/revenue', revenueRoutes); // Protected inside the route file
 
 app.use(notFoundHandler);
 app.use(errorHandler);
