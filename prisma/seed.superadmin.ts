@@ -1,6 +1,11 @@
 
 import { PrismaClient, Role } from '@prisma/client';
 import bcrypt from 'bcryptjs';
+import path from 'path';
+import dotenv from 'dotenv';
+
+const envPath = path.resolve(__dirname, '../.env');
+dotenv.config({ path: envPath });
 
 const prisma = new PrismaClient();
 
@@ -50,7 +55,7 @@ async function createSuperAdmin() {
             },
         });
 
-        console.log('✅ Super admin created successfully');
+        console.log('✅ Super admin created successfully with ID:', admin.id);
         console.log('📧 Email:', email);
         console.log('🔑 Password:', password);
         console.log('⚠️  Please change the password after first login');
