@@ -1,15 +1,13 @@
 import { Router } from 'express';
 import {
-  getSecurityLogs,
-  getFailedLoginAttempts,
+  getLoginSessions,
+  getSuspiciousActivity,
 } from '../controllers/adminSecurity.controller';
-import { protectAdmin } from '../middlewares/adminAuth.middleware';
+import { requireSuperAdmin } from '../middlewares/requireSuperAdmin.middleware';
 
 const router = Router();
 
-router.use(protectAdmin);
-
-router.get('/logs', getSecurityLogs);
-router.get('/failed-logins', getFailedLoginAttempts);
+router.get('/login-sessions', requireSuperAdmin, getLoginSessions);
+router.get('/suspicious', requireSuperAdmin, getSuspiciousActivity);
 
 export default router;
