@@ -37,6 +37,7 @@ export class AdminUsersService {
         orderBy: { createdAt: 'desc' },
         select: {
           id: true,
+          fullName: true,
           email: true,
           role: true,
           createdAt: true,
@@ -88,7 +89,8 @@ export class AdminUsersService {
       const totalEmployees = u.companies.reduce((acc, comp) => acc + comp._count.employees, 0);
 
       return {
-        userId: u.id,
+        id: u.id,
+        fullName: u.fullName,
         email: u.email,
         role: u.role,
         createdAt: u.createdAt,

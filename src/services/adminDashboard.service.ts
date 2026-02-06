@@ -38,12 +38,34 @@ export const getDashboardSummary = async () => {
 
   const monthlyRevenue = invoices.reduce((sum, inv) => sum + inv.totalAmount, 0);
 
+  // Calculate Chart Data (Monthly User Registrations for last 12 months)
+  const chartData = [];
+  for (let i = 11; i >= 0; i--) {
+    const d = new Date();
+    d.setMonth(d.getMonth() - i);
+    const monthName = d.toLocaleString('default', { month: 'short' });
+    const yearMonth = d.toISOString().slice(0, 7);
+
+    const count = await prisma.user.count({
+      where: {
+        role: 'USER',
+        createdAt: {
+          gte: new Date(yearMonth + '-01'),
+          lt: new Date(new Date(yearMonth + '-01').setMonth(new Date(yearMonth + '-01').getMonth() + 1))
+        }
+      }
+    });
+
+    chartData.push({ month: monthName, value: count });
+  }
+
   return {
     totalUsers,
     activeSubscriptions,
     totalCompanies,
     totalEmployees,
     monthlyRevenue,
-    suspiciousLogins
+    suspiciousLogins,
+    chartData
   };
 };
