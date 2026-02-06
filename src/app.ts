@@ -36,7 +36,7 @@ app.use(express.urlencoded({ extended: true }));
 
 app.use('/api/admin', limiter);
 
-app.get('/health', (req, res) => {
+app.get('/health', (_req, res) => {
   res.status(200).json({
     success: true,
     message: 'Payroll Admin Backend API is running',
