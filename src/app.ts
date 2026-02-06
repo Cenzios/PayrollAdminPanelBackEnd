@@ -9,6 +9,7 @@ import { errorHandler, notFoundHandler } from './middlewares/error.middleware';
 import authRoutes from './routes/auth.routes';
 import dashboardRoutes from './routes/admin.dashboard.routes';
 import usersRoutes from './routes/admin.users.routes';
+import companiesRoutes from './routes/admin.companies.routes';
 import subscriptionsRoutes from './routes/admin.subscriptions.routes';
 import securityRoutes from './routes/admin.security.routes';
 import auditRoutes from './routes/admin.audit.routes';
@@ -49,6 +50,7 @@ app.use('/api/auth', authRoutes);
 // Admin Routes (Protected)
 app.use('/api/admin/dashboard', dashboardRoutes); // Protected inside the route file
 app.use('/api/admin/users', usersRoutes); // Protected inside the route file
+app.use('/api/admin/companies', companiesRoutes); // Protected inside the route file
 app.use('/api/admin/subscriptions', subscriptionsRoutes); // Protected inside the route file
 app.use('/api/admin/security', requireSuperAdmin, securityRoutes);
 app.use('/api/admin/audit', requireSuperAdmin, auditRoutes);
