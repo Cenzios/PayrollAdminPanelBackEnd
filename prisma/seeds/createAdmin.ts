@@ -8,7 +8,8 @@ async function createSuperAdmin() {
     const email = 'admin@payroll.com';
     const password = 'Admin@123';
 
-    const existingAdmin = await prisma.admin.findUnique({
+    // Using prisma.user as current schema uses User model with Role.SUPER_ADMIN
+    const existingAdmin = await prisma.user.findUnique({
       where: { email },
     });
 
@@ -19,11 +20,14 @@ async function createSuperAdmin() {
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    const admin = await prisma.admin.create({
+    await prisma.user.create({
       data: {
         email,
         password: hashedPassword,
         role: 'SUPER_ADMIN',
+        fullName: 'Super Admin',
+        isEmailVerified: true,
+        isPasswordSet: true,
       },
     });
 
