@@ -1,6 +1,9 @@
 # Build stage
 FROM node:18-alpine AS builder
 
+
+RUN apk add --no-cache openssl
+
 WORKDIR /app
 
 # Copy package files
