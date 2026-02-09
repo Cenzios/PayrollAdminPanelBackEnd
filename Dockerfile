@@ -35,7 +35,7 @@ RUN npm install --omit=dev
 COPY --from=builder /app/dist ./dist
 
 # Expose the application port
-EXPOSE 5000
+EXPOSE 6092
 
 # Start the application
 CMD ["npm", "start"]
