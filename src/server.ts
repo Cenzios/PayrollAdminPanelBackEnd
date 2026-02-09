@@ -4,13 +4,18 @@ import prisma from './config/db';
 
 dotenv.config();
 
-const PORT = Number(process.env.PORT) || 6092;
+const PORT = Number(process.env.PORT);
 const HOST = '0.0.0.0';
 
 const startServer = async () => {
   console.log('🎬 Starting server initialization...');
 
   // 1. Validate Environment Variables
+  if (!PORT) {
+    console.error('❌ CRITICAL ERROR: PORT is not defined in environment variables.');
+    process.exit(1);
+  }
+
   if (!process.env.DATABASE_URL) {
     console.error('❌ CRITICAL ERROR: DATABASE_URL is not defined in environment variables.');
     process.exit(1);
