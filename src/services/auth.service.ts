@@ -32,7 +32,7 @@ export const loginAdmin = async (email: string, password: string): Promise<any> 
             role: user.role,
         },
         jwtConfig.secret,
-        { expiresIn: jwtConfig.expiresIn }
+        { expiresIn: jwtConfig.expiresIn as any }
     );
 
     return {

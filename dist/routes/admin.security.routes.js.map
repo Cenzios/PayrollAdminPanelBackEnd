@@ -1,0 +1,1 @@
+{"version":3,"file":"admin.security.routes.js","sourceRoot":"","sources":["../../src/routes/admin.security.routes.ts"],"names":[],"mappings":";;AAAA,qCAAiC;AACjC,sFAGiD;AACjD,8FAAgF;AAEhF,MAAM,MAAM,GAAG,IAAA,gBAAM,GAAE,CAAC;AAExB,MAAM,CAAC,GAAG,CAAC,iBAAiB,EAAE,gDAAiB,EAAE,2CAAgB,CAAC,CAAC;AACnE,MAAM,CAAC,GAAG,CAAC,aAAa,EAAE,gDAAiB,EAAE,gDAAqB,CAAC,CAAC;AAEpE,kBAAe,MAAM,CAAC"}

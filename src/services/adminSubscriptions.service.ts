@@ -1,7 +1,17 @@
 import prisma from '../config/db';
 
 export class AdminSubscriptionsService {
-  async getAllSubscriptions(page: number, limit: number) {
+  async getSubscriptionTimeline(userId: string) {
+    return prisma.subscription.findMany({
+      where: { userId },
+      include: {
+        plan: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async getAllSubscriptions(_page: number, _limit: number) {
     return {
       message: 'Get all subscriptions service method',
     };

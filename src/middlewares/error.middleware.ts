@@ -8,9 +8,9 @@ interface ErrorResponse {
 
 export const errorHandler = (
   error: any,
-  req: Request,
+  _req: Request,
   res: Response,
-  next: NextFunction
+  _next: NextFunction
 ): void => {
   console.error('Error:', error);
 
@@ -32,7 +32,7 @@ export const errorHandler = (
 export const notFoundHandler = (
   req: Request,
   res: Response,
-  next: NextFunction
+  _next: NextFunction
 ): void => {
   res.status(404).json({
     success: false,

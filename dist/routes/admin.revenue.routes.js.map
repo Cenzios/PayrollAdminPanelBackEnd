@@ -1,0 +1,1 @@
+{"version":3,"file":"admin.revenue.routes.js","sourceRoot":"","sources":["../../src/routes/admin.revenue.routes.ts"],"names":[],"mappings":";;AAAA,qCAAiC;AACjC,oFAGgD;AAChD,8FAAgF;AAEhF,MAAM,MAAM,GAAG,IAAA,gBAAM,GAAE,CAAC;AAExB,MAAM,CAAC,GAAG,CAAC,UAAU,EAAE,gDAAiB,EAAE,2CAAiB,CAAC,CAAC;AAC7D,MAAM,CAAC,GAAG,CAAC,WAAW,EAAE,gDAAiB,EAAE,wCAAc,CAAC,CAAC;AAE3D,kBAAe,MAAM,CAAC"}

@@ -191,7 +191,7 @@ export class AdminUsersService {
     };
   }
 
-  async updateUserStatus(userId: string, status: string) {
+  async updateUserStatus(_userId: string, _status: string) {
     // This could be for locking/unlocking or changing roles
     // For now, let's keep it simple as requested or skip if not in main requirement
     return {

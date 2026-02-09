@@ -22,7 +22,7 @@ export const getLoginSessions = async (
 };
 
 export const getSuspiciousActivity = async (
-  req: Request,
+  _req: Request,
   res: Response,
   next: NextFunction
 ): Promise<void> => {

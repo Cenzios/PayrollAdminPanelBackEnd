@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import adminRevenueService from '../services/adminRevenue.service';
 
 export const getRevenueSummary = async (
-  req: Request,
+  _req: Request,
   res: Response,
   next: NextFunction
 ): Promise<void> => {

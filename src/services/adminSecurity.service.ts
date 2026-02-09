@@ -1,4 +1,4 @@
-import { Prisma } from '@prisma/client';
+import { Prisma as _Prisma } from '@prisma/client';
 import prisma from '../config/db';
 
 export class AdminSecurityService {
