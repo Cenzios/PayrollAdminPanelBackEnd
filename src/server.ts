@@ -8,18 +8,38 @@ const PORT = Number(process.env.PORT) || 6092;
 const HOST = '0.0.0.0';
 
 const startServer = async () => {
+  console.log('🎬 Starting server initialization...');
+
+  // 1. Validate Environment Variables
+  if (!process.env.DATABASE_URL) {
+    console.error('❌ CRITICAL ERROR: DATABASE_URL is not defined in environment variables.');
+    process.exit(1);
+  }
+
   try {
+    // 2. Connect to Database
+    console.log('⏳ Connecting to database...');
     await prisma.$connect();
     console.log('✅ Database connected successfully');
 
-    app.listen(PORT, HOST, () => {
-      console.log(`🚀 Server is running on http://${HOST}:${PORT}`);
+    // 3. Start Express Server
+    const server = app.listen(PORT, HOST, () => {
+      console.log('--------------------------------------------------');
+      console.log(`🚀 BACKEND SERVER IS LIVE`);
+      console.log(`📡 Internal URL: http://${HOST}:${PORT}`);
+      console.log(`🩺 Health Check: http://${HOST}:${PORT}/health`);
       console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
-      console.log(`📍 Health check: http://${HOST}:${PORT}/health`);
-      console.log(`📡 Public access: admin.server.payroll.cenzios.com`);
+      console.log('--------------------------------------------------');
     });
+
+    server.on('error', (error: any) => {
+      console.error('❌ Server failed to start:', error);
+      process.exit(1);
+    });
+
   } catch (error) {
-    console.error('❌ Failed to start server:', error);
+    console.error('❌ CRITICAL STARTUP ERROR:', error);
+    // Exit with 1 so Docker/Dokploy knows it failed
     process.exit(1);
   }
 };
