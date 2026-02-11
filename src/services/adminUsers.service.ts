@@ -128,6 +128,13 @@ export class AdminUsersService {
           },
           orderBy: { createdAt: 'desc' },
         },
+        companies: {
+          include: {
+            _count: {
+              select: { employees: true }
+            }
+          }
+        },
         invoices: {
           orderBy: { createdAt: 'desc' },
         },
@@ -157,6 +164,13 @@ export class AdminUsersService {
       }),
     };
 
+    const activeSub = user.subscriptions[0];
+    const totalEmployees = user.companies.reduce((acc, comp) => acc + comp._count.employees, 0);
+
+    // Calculate Monthly Bill (Basic Plan Price + Registration Fee snapshot or similar logic)
+    // For now, let's use the Price from Plan.
+    const monthlyBill = activeSub?.plan?.price || 0;
+
     return {
       user: {
         id: user.id,
@@ -169,6 +183,25 @@ export class AdminUsersService {
         lockoutUntil: user.lockoutUntil,
         createdAt: user.createdAt,
         accountStatus: user.lockoutUntil && user.lockoutUntil > new Date() ? 'LOCKED' : 'ACTIVE',
+      },
+      currentSubscription: activeSub ? {
+        planName: activeSub.plan.name,
+        price: activeSub.plan.price,
+        status: activeSub.status,
+        startDate: activeSub.startDate,
+        endDate: activeSub.endDate,
+        maxEmployees: activeSub.plan.maxEmployees,
+        extraSlots: activeSub.addons.reduce((acc, addon) => acc + addon.value, 0),
+      } : null,
+      companies: user.companies.map(c => ({
+        id: c.id,
+        name: c.name,
+        employeeCount: c._count.employees
+      })),
+      stats: {
+        totalEmployees,
+        monthlyBill,
+        nextPaymentDate: activeSub?.endDate || null,
       },
       subscriptionHistory: user.subscriptions.map(s => ({
         id: s.id,
@@ -192,8 +225,6 @@ export class AdminUsersService {
   }
 
   async updateUserStatus(_userId: string, _status: string) {
-    // This could be for locking/unlocking or changing roles
-    // For now, let's keep it simple as requested or skip if not in main requirement
     return {
       message: 'Status update logic would go here',
     };
