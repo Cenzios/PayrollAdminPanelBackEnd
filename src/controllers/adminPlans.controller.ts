@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import adminPlansService from '../services/adminPlans.service';
 
 export class AdminPlansController {
-    async getAllPlans(req: Request, res: Response) {
+    async getAllPlans(_req: Request, res: Response) {
         try {
             const plans = await adminPlansService.getAllPlans();
             return res.status(200).json({
