@@ -1,6 +1,24 @@
 import { Response } from 'express';
 import * as adminProfileService from '../services/adminProfile.service';
 
+export const getProfileDetails = async (req: any, res: Response) => {
+    try {
+        const userId = req.user.id;
+        const user = await adminProfileService.getProfile(userId);
+
+        return res.status(200).json({
+            success: true,
+            data: user,
+        });
+    } catch (error: any) {
+        return res.status(400).json({
+            success: false,
+            message: error.message || 'Failed to fetch profile',
+        });
+    }
+};
+
+
 export const updateProfileDetails = async (req: any, res: Response) => {
     try {
         const userId = req.user.id;

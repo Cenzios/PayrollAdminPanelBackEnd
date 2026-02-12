@@ -3,6 +3,19 @@ import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
 
+export const getProfile = async (userId: string) => {
+    return await prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+            id: true,
+            fullName: true,
+            email: true,
+            role: true,
+        },
+    });
+};
+
+
 export const updateProfile = async (userId: string, data: { fullName?: string; email?: string }) => {
     // If email is being changed, check if it's already taken
     if (data.email) {
