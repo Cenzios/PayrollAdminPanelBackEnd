@@ -191,7 +191,9 @@ export class AdminUsersService {
         startDate: activeSub.startDate,
         endDate: activeSub.endDate,
         maxEmployees: activeSub.plan.maxEmployees,
-        extraSlots: activeSub.addons.reduce((acc, addon) => acc + addon.value, 0),
+        extraSlots: activeSub.addons
+          .filter(addon => addon.type === 'EMPLOYEE_EXTRA')
+          .reduce((acc, addon) => acc + addon.value, 0),
       } : null,
       companies: user.companies.map(c => ({
         id: c.id,
@@ -224,10 +226,30 @@ export class AdminUsersService {
     };
   }
 
-  async updateUserStatus(_userId: string, _status: string) {
-    return {
-      message: 'Status update logic would go here',
-    };
+  async updateUserStatus(userId: string, status: string) {
+    // Validate status
+    const validStatuses = ['DRAFT', 'PENDING_ACTIVATION', 'ACTIVE', 'EXPIRED', 'CANCELLED', 'FAILED'];
+    if (!validStatuses.includes(status)) {
+      throw new Error(`Invalid status: ${status}`);
+    }
+
+    // Get the latest subscription for the user
+    const latestSubscription = await prisma.subscription.findFirst({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (!latestSubscription) {
+      throw new Error('No subscription found for this user');
+    }
+
+    // Update the subscription status
+    const updatedSubscription = await prisma.subscription.update({
+      where: { id: latestSubscription.id },
+      data: { status: status as any },
+    });
+
+    return updatedSubscription;
   }
 }
 
