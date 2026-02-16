@@ -191,7 +191,9 @@ export class AdminUsersService {
         startDate: activeSub.startDate,
         endDate: activeSub.endDate,
         maxEmployees: activeSub.plan.maxEmployees,
-        extraSlots: activeSub.addons.reduce((acc, addon) => acc + addon.value, 0),
+        extraSlots: activeSub.addons
+          .filter(addon => addon.type === 'EMPLOYEE_EXTRA')
+          .reduce((acc, addon) => acc + addon.value, 0),
       } : null,
       companies: user.companies.map(c => ({
         id: c.id,
