@@ -62,7 +62,9 @@ export class AdminUsersService {
             select: {
               _count: {
                 select: {
-                  employees: true,
+                  employees: {
+                    where: { deletedAt: null },
+                  },
                 },
               },
             },
@@ -131,7 +133,7 @@ export class AdminUsersService {
         companies: {
           include: {
             _count: {
-              select: { employees: true }
+              select: { employees: { where: { deletedAt: null } } }
             }
           }
         },

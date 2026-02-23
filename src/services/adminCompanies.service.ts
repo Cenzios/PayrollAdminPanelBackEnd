@@ -39,7 +39,9 @@ export class AdminCompaniesService {
                     },
                     _count: {
                         select: {
-                            employees: true,
+                            employees: {
+                                where: { deletedAt: null },
+                            },
                         },
                     },
                 },
