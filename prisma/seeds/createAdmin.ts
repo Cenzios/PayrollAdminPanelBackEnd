@@ -2,11 +2,11 @@ import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
-
+// npx ts-node prisma/seeds/createAdmin.ts
 async function createSuperAdmin() {
   try {
     const email = 'admin@payroll.com';
-    const password = 'Admin@123';
+    const password = 'Payroll@123';
 
     // Using prisma.user as current schema uses User model with Role.SUPER_ADMIN
     const existingAdmin = await prisma.user.findUnique({
