@@ -16,6 +16,7 @@ import securityRoutes from './routes/admin.security.routes';
 import auditRoutes from './routes/admin.audit.routes';
 import revenueRoutes from './routes/admin.revenue.routes';
 import profileRoutes from './routes/admin.profile.routes';
+import settingsRoutes from './routes/admin.settings.routes';
 import notificationsRoutes from './routes/admin.notifications.routes';
 import { requireSuperAdmin } from './middlewares/requireSuperAdmin.middleware';
 
@@ -60,6 +61,7 @@ app.use('/api/admin/security', requireSuperAdmin, securityRoutes);
 app.use('/api/admin/audit', requireSuperAdmin, auditRoutes);
 app.use('/api/admin/revenue', revenueRoutes); // Protected inside the route file
 app.use('/api/admin/profile', profileRoutes); // Protected inside the route file
+app.use('/api/admin/settings', settingsRoutes); // Protected inside the route file
 app.use('/api/admin/notifications', notificationsRoutes); // Protected inside the route file
 
 app.use(notFoundHandler);

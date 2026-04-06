@@ -1,11 +1,13 @@
 import { Router } from 'express';
-import * as authController from '../controllers/auth.controller';
 import * as adminProfileController from '../controllers/adminProfile.controller';
 import { requireSuperAdmin } from '../middlewares/requireSuperAdmin.middleware';
 
 const router = Router();
 
-router.post('/login', authController.login);
-router.get('/me', requireSuperAdmin, adminProfileController.getProfileDetails);
+// All routes here require super admin privileges
+router.use(requireSuperAdmin);
+
+router.put('/profile', adminProfileController.updateProfileDetails);
+router.put('/change-password', adminProfileController.updatePassword);
 
 export default router;

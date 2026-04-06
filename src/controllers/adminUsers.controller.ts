@@ -47,3 +47,39 @@ export const getUserById = async (
     }
   }
 };
+
+export const updateUserSubscriptionStatus = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const { userId } = req.params;
+    const { status } = req.body;
+
+    if (!status) {
+      res.status(400).json({
+        success: false,
+        error: 'Status is required',
+      });
+      return;
+    }
+
+    const result = await adminUsersService.updateUserStatus(userId, status);
+
+    res.status(200).json({
+      success: true,
+      message: 'User subscription status updated successfully',
+      data: result,
+    });
+  } catch (error: any) {
+    if (error.message.includes('Invalid status') || error.message === 'No subscription found for this user') {
+      res.status(400).json({
+        success: false,
+        error: error.message,
+      });
+    } else {
+      next(error);
+    }
+  }
+};

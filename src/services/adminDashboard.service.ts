@@ -12,7 +12,7 @@ export const getDashboardSummary = async () => {
   ] = await Promise.all([
     prisma.user.count({ where: { role: 'USER' } }),
     prisma.company.count(),
-    prisma.employee.count({ where: { status: 'ACTIVE' } }),
+    prisma.employee.count({ where: { status: 'ACTIVE', deletedAt: null } }),
     prisma.invoice.aggregate({
       where: { status: 'PAID' },
       _sum: { totalAmount: true }
