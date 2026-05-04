@@ -3,12 +3,18 @@ import { PrismaClient, DocumentStatus } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
-// Get all pending manual payment proofs
-export const getPendingPayments = async (_req: Request, res: Response) => {
+// Get manual payment proofs by status (defaults to PENDING)
+export const getPendingPayments = async (req: Request, res: Response) => {
     try {
+        const { status } = req.query;
+        // Validate or default
+        const docStatus = status && Object.values(DocumentStatus).includes(status as any)
+            ? status as DocumentStatus
+            : DocumentStatus.PENDING;
+
         const documents = await prisma.userDocument.findMany({
             where: {
-                status: DocumentStatus.PENDING,
+                status: docStatus,
             },
             include: {
                 user: {
