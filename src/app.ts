@@ -18,6 +18,7 @@ import revenueRoutes from './routes/admin.revenue.routes';
 import profileRoutes from './routes/admin.profile.routes';
 import settingsRoutes from './routes/admin.settings.routes';
 import notificationsRoutes from './routes/admin.notifications.routes';
+import manualPaymentsRoutes from './routes/admin.manualpayments.routes';
 import { requireSuperAdmin } from './middlewares/requireSuperAdmin.middleware';
 
 const app: Application = express();
@@ -63,6 +64,7 @@ app.use('/api/admin/revenue', revenueRoutes); // Protected inside the route file
 app.use('/api/admin/profile', profileRoutes); // Protected inside the route file
 app.use('/api/admin/settings', settingsRoutes); // Protected inside the route file
 app.use('/api/admin/notifications', notificationsRoutes); // Protected inside the route file
+app.use('/api/admin/manual-payments', manualPaymentsRoutes); // Will add protection inside the route file if needed
 
 app.use(notFoundHandler);
 app.use(errorHandler);

@@ -11,9 +11,9 @@ const prisma = new PrismaClient();
 
 async function createSuperAdmin() {
     try {
-        const email = 'admin@company.com';
-        const password = 'StrongAdmin@123';
-        const fullName = 'Super Admin';
+        const email = process.env.SEED_ADMIN_EMAIL ?? 'admin@payroll.com';
+        const password = process.env.SEED_ADMIN_PASSWORD ?? 'Payroll@123';
+        const fullName = process.env.SEED_ADMIN_FULLNAME ?? 'Super Admin';
 
         console.log(`Checking for existing admin with email: ${email}`);
 
