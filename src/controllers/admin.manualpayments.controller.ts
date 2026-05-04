@@ -38,32 +38,100 @@ export const getPendingPayments = async (_req: Request, res: Response) => {
 export const approvePayment = async (req: Request, res: Response) => {
     const { id } = req.params;
     try {
-        const document = await prisma.userDocument.update({
-            where: { id },
-            data: { status: DocumentStatus.APPROVED },
-        });
+        const updatedDocument = await prisma.$transaction(async (tx) => {
+            // Fetch the document first
+            const doc = await tx.userDocument.findUnique({ where: { id } });
+            if (!doc) throw new Error('Document not found');
 
-        // Check if there is a pending subscription for this user to activate
-        // We update pending activation to active
-        await prisma.subscription.updateMany({
-            where: {
-                userId: document.userId,
-                status: 'PENDING_ACTIVATION'
-            },
-            data: {
-                status: 'ACTIVE',
-                activatedAt: new Date()
+            const targetUserId = doc.userId;
+
+            // 1. Mark document as APPROVED
+            const updatedDoc = await tx.userDocument.update({
+                where: { id },
+                data: { status: DocumentStatus.APPROVED },
+            });
+
+            // 2. Cancel Any Existing Trial (or Previous) Subscription
+            const currentActive = await tx.subscription.findFirst({
+                where: { userId: targetUserId, status: 'ACTIVE' },
+            });
+            if (currentActive) {
+                await tx.subscription.update({
+                    where: { id: currentActive.id },
+                    data: {
+                        status: 'CANCELLED',
+                        endDate: new Date(),
+                    },
+                });
             }
+
+            // 3. Activate the Pending Paid Subscription
+            const pendingSub = await tx.subscription.findFirst({
+                where: { userId: targetUserId, status: 'PENDING_ACTIVATION' },
+                include: { plan: true },
+            });
+
+            if (pendingSub) {
+                await tx.subscription.update({
+                    where: { id: pendingSub.id },
+                    data: {
+                        status: 'ACTIVE',
+                        activatedAt: new Date(),
+                    },
+                });
+
+                const plan = pendingSub.plan;
+
+                // Calculate current active employee count for the user's companies
+                const currentEmployeeCount = await tx.employee.count({
+                    where: {
+                        company: { ownerId: targetUserId },
+                        deletedAt: null,
+                    },
+                });
+
+                // Create the Initial "Registration" Invoice
+                await tx.invoice.create({
+                    data: {
+                        userId: targetUserId,
+                        subscriptionId: pendingSub.id,
+                        planId: plan.id,
+                        billingType: 'REGISTRATION',
+                        billingMonth: new Date().toISOString().slice(0, 7), // e.g., "2026-05"
+                        employeeCount: currentEmployeeCount,
+                        pricePerEmployee: plan.employeePrice,
+                        registrationFee: plan.registrationFee,
+                        totalAmount: plan.registrationFee + currentEmployeeCount * plan.employeePrice,
+                        status: 'PAID',
+                        paidAt: new Date(),
+                        dueDate: new Date(),
+                        billingPeriodStart: pendingSub.startDate,
+                        billingPeriodEnd: pendingSub.endDate,
+                        planNameSnapshot: plan.name,
+                    },
+                });
+            }
+
+            // 4. Mark the User as a Paid User (Remove Trial Restrictions)
+            await tx.user.update({
+                where: { id: targetUserId },
+                data: { isTrialUser: false },
+            });
+
+            return updatedDoc;
+        }, {
+            maxWait: 15000,
+            timeout: 25000
         });
 
         res.status(200).json({
             success: true,
             message: 'Payment approved successfully',
-            data: document,
+            data: updatedDocument,
         });
-    } catch (error) {
+    } catch (error: any) {
         console.error('Error approving payment:', error);
-        res.status(500).json({ success: false, message: 'Server error while approving payment' });
+        res.status(500).json({ success: false, message: error.message || 'Server error while approving payment' });
     }
 };
 
