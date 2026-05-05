@@ -56,6 +56,7 @@ export class AdminUsersService {
           _count: {
             select: {
               companies: true,
+              userDocuments: true,
             },
           },
           companies: {
@@ -99,6 +100,7 @@ export class AdminUsersService {
         currentPlan: activeSub?.plan?.name || 'N/A',
         subscriptionStatus: activeSub?.status || 'NONE',
         companyCount: u._count.companies,
+        paymentMethod: u._count.userDocuments > 0 ? 'Manual' : 'Online',
         employeeCount: totalEmployees,
         lastLogin: lastSession ? {
           ip: lastSession.ipAddress,
