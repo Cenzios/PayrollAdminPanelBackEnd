@@ -26,12 +26,13 @@ export const getAllInvoices = async (
   try {
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 10;
-    const { status, billingType, month } = req.query;
+    const { status, billingType, month, search } = req.query;
 
     const result = await adminRevenueService.getAllInvoices(page, limit, {
       status: status as string,
       billingType: billingType as string,
-      month: month as string
+      month: month as string,
+      search: search as string
     });
 
     res.status(200).json({
