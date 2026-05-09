@@ -56,13 +56,16 @@ export class AdminUsersService {
           _count: {
             select: {
               companies: true,
+              userDocuments: true,
             },
           },
           companies: {
             select: {
               _count: {
                 select: {
-                  employees: true,
+                  employees: {
+                    where: { deletedAt: null },
+                  },
                 },
               },
             },
@@ -97,6 +100,7 @@ export class AdminUsersService {
         currentPlan: activeSub?.plan?.name || 'N/A',
         subscriptionStatus: activeSub?.status || 'NONE',
         companyCount: u._count.companies,
+        paymentMethod: u._count.userDocuments > 0 ? 'Manual' : 'Online',
         employeeCount: totalEmployees,
         lastLogin: lastSession ? {
           ip: lastSession.ipAddress,
@@ -131,7 +135,7 @@ export class AdminUsersService {
         companies: {
           include: {
             _count: {
-              select: { employees: true }
+              select: { employees: { where: { deletedAt: null } } }
             }
           }
         },
@@ -191,7 +195,9 @@ export class AdminUsersService {
         startDate: activeSub.startDate,
         endDate: activeSub.endDate,
         maxEmployees: activeSub.plan.maxEmployees,
-        extraSlots: activeSub.addons.reduce((acc, addon) => acc + addon.value, 0),
+        extraSlots: activeSub.addons
+          .filter(addon => addon.type === 'EMPLOYEE_EXTRA')
+          .reduce((acc, addon) => acc + addon.value, 0),
       } : null,
       companies: user.companies.map(c => ({
         id: c.id,
@@ -224,10 +230,30 @@ export class AdminUsersService {
     };
   }
 
-  async updateUserStatus(_userId: string, _status: string) {
-    return {
-      message: 'Status update logic would go here',
-    };
+  async updateUserStatus(userId: string, status: string) {
+    // Validate status
+    const validStatuses = ['DRAFT', 'PENDING_ACTIVATION', 'ACTIVE', 'EXPIRED', 'CANCELLED', 'FAILED'];
+    if (!validStatuses.includes(status)) {
+      throw new Error(`Invalid status: ${status}`);
+    }
+
+    // Get the latest subscription for the user
+    const latestSubscription = await prisma.subscription.findFirst({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (!latestSubscription) {
+      throw new Error('No subscription found for this user');
+    }
+
+    // Update the subscription status
+    const updatedSubscription = await prisma.subscription.update({
+      where: { id: latestSubscription.id },
+      data: { status: status as any },
+    });
+
+    return updatedSubscription;
   }
 }
 
