@@ -30,8 +30,24 @@ const limiter = rateLimit({
 });
 
 app.use(helmet());
+
+// Support multiple comma-separated origins: e.g. CORS_ORIGIN=https://qa.example.com,https://prod.example.com
+const allowedOrigins = (process.env.CORS_ORIGIN || '')
+  .split(',')
+  .map(o => o.trim())
+  .filter(Boolean);
+
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || '*',
+  origin: (origin, callback) => {
+    // Allow requests with no origin (mobile apps, curl, server-to-server)
+    if (!origin) return callback(null, true);
+    // If no CORS_ORIGIN set, allow all
+    if (allowedOrigins.length === 0) return callback(null, true);
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    return callback(new Error(`CORS: Origin '${origin}' is not allowed`));
+  },
   credentials: true,
 }));
 app.use(morgan('dev'));
