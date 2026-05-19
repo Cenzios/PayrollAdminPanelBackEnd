@@ -104,6 +104,7 @@ model User {
   createdAt           DateTime           @default(now()) @map("created_at")
   updatedAt           DateTime           @updatedAt @map("updated_at")
   isTrialUser         Boolean            @default(true) @map("is_trial_user")
+  status              UserStatus         @default(ACTIVE)
   auditLogs           AuditLog[]
   companies           Company[]
   invoices            Invoice[]
@@ -206,6 +207,8 @@ model Salary {
   totalDeduction    Float             @map("total_deduction")
   loanDeduction     Float             @default(0) @map("loan_deduction")
   paidLeave         Int               @default(0) @map("paid_leave")
+  leave_days        Int               @default(0)
+  sick_leave_days   Int               @default(0)
   company           Company           @relation(fields: [companyId], references: [id])
   employee          Employee          @relation(fields: [employeeId], references: [id])
   payrollRates      PayrollRates?     @relation(fields: [taxConfigId], references: [id])
@@ -541,4 +544,9 @@ enum DocumentStatus {
   PENDING
   APPROVED
   REJECTED
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
 }
