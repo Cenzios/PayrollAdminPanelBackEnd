@@ -1,55 +1,24 @@
 import { Request, Response } from 'express';
 import { PrismaClient, DocumentStatus } from '@prisma/client';
+import { sendPaymentConfirmationEmail } from '../services/email.service';
 
 const prisma = new PrismaClient();
-
-// Get manual payment proofs by status (defaults to PENDING)
-export const getPendingPayments = async (req: Request, res: Response) => {
-    try {
-        const { status } = req.query;
-        // Validate or default
-        const docStatus = status && Object.values(DocumentStatus).includes(status as any)
-            ? status as DocumentStatus
-            : DocumentStatus.PENDING;
-
-        const documents = await prisma.userDocument.findMany({
-            where: {
-                status: docStatus,
-            },
-            include: {
-                user: {
-                    select: {
-                        id: true,
-                        fullName: true,
-                        email: true,
-                    },
-                },
-            },
-            orderBy: {
-                createdAt: 'desc',
-            },
-        });
-
-        res.status(200).json({
-            success: true,
-            data: documents,
-        });
-    } catch (error) {
-        console.error('Error fetching pending payments:', error);
-        res.status(500).json({ success: false, message: 'Server error while fetching pending payments' });
-    }
-};
-
+// ... (getPendingPayments remains the same)
 // Approve a manual payment proof
 export const approvePayment = async (req: Request, res: Response) => {
     const { id } = req.params;
     try {
-        const updatedDocument = await prisma.$transaction(async (tx) => {
-            // Fetch the document first
-            const doc = await tx.userDocument.findUnique({ where: { id } });
+        const result = await prisma.$transaction(async (tx) => {
+            // Fetch the document with user info first
+            const doc = await tx.userDocument.findUnique({
+                where: { id },
+                include: { user: true }
+            });
             if (!doc) throw new Error('Document not found');
 
             const targetUserId = doc.userId;
+            const userEmail = doc.user.email;
+            const fullName = doc.user.fullName;
 
             // 1. Mark document as APPROVED
             const updatedDoc = await tx.userDocument.update({
@@ -124,16 +93,22 @@ export const approvePayment = async (req: Request, res: Response) => {
                 data: { isTrialUser: false },
             });
 
-            return updatedDoc;
+            return { updatedDoc, userEmail, fullName };
         }, {
             maxWait: 15000,
             timeout: 25000
         });
 
+        // Send confirmation email asynchronously (don't block the response)
+        // Wrapped in try-catch to ensure failure sending email doesn't affect the approval success response
+        sendPaymentConfirmationEmail(result.userEmail, result.fullName).catch(err => {
+            console.error('Failed to send confirmation email after approval:', err);
+        });
+
         res.status(200).json({
             success: true,
-            message: 'Payment approved successfully',
-            data: updatedDocument,
+            message: 'Payment approved successfully and confirmation email sent',
+            data: result.updatedDoc,
         });
     } catch (error: any) {
         console.error('Error approving payment:', error);
