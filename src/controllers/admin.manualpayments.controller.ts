@@ -3,7 +3,42 @@ import { PrismaClient, DocumentStatus } from '@prisma/client';
 import { sendPaymentConfirmationEmail } from '../services/email.service';
 
 const prisma = new PrismaClient();
-// ... (getPendingPayments remains the same)
+// Get manual payment proofs by status (defaults to PENDING)
+export const getPendingPayments = async (req: Request, res: Response) => {
+    try {
+        const { status } = req.query;
+        // Validate or default
+        const docStatus = status && Object.values(DocumentStatus).includes(status as any)
+            ? status as DocumentStatus
+            : DocumentStatus.PENDING;
+
+        const documents = await prisma.userDocument.findMany({
+            where: {
+                status: docStatus,
+            },
+            include: {
+                user: {
+                    select: {
+                        id: true,
+                        fullName: true,
+                        email: true,
+                    },
+                },
+            },
+            orderBy: {
+                createdAt: 'desc',
+            },
+        });
+
+        res.status(200).json({
+            success: true,
+            data: documents,
+        });
+    } catch (error) {
+        console.error('Error fetching pending payments:', error);
+        res.status(500).json({ success: false, message: 'Server error while fetching pending payments' });
+    }
+};
 // Approve a manual payment proof
 export const approvePayment = async (req: Request, res: Response) => {
     const { id } = req.params;
