@@ -207,8 +207,8 @@ model Salary {
   totalDeduction    Float             @map("total_deduction")
   loanDeduction     Float             @default(0) @map("loan_deduction")
   paidLeave         Int               @default(0) @map("paid_leave")
-  leave_days        Int               @default(0)
-  sick_leave_days   Int               @default(0)
+  leaveDays         Int               @default(0) @map("leave_days")
+  sickLeaveDays     Int               @default(0) @map("sick_leave_days")
   company           Company           @relation(fields: [companyId], references: [id])
   employee          Employee          @relation(fields: [employeeId], references: [id])
   payrollRates      PayrollRates?     @relation(fields: [taxConfigId], references: [id])
@@ -396,28 +396,29 @@ model EmployeeBank {
 }
 
 model Loan {
-  id                   String            @id @default(uuid())
-  loanId               String            @map("loan_id")
-  employeeId           String            @map("employee_id")
-  companyId            String            @map("company_id")
-  employeeNameSnapshot String            @map("employee_name_snapshot")
-  loanTitle            String            @map("loan_title")
+  id                   String             @id @default(uuid())
+  loanId               String             @map("loan_id")
+  employeeId           String             @map("employee_id")
+  companyId            String             @map("company_id")
+  employeeNameSnapshot String             @map("employee_name_snapshot")
+  loanTitle            String             @map("loan_title")
   description          String?
-  startDate            DateTime          @map("start_date")
-  endDate              DateTime          @map("end_date")
-  interestRateType     InterestRateType  @map("interest_rate_type")
+  startDate            DateTime           @map("start_date")
+  endDate              DateTime           @map("end_date")
+  interestRateType     InterestRateType   @map("interest_rate_type")
   amount               Float
-  installmentCount     Int               @map("installment_count")
-  interestRate         Float             @map("interest_rate")
-  monthlyPremium       Float             @map("monthly_premium")
-  supportingDocId      String?           @map("supporting_doc_id")
-  createdAt            DateTime          @default(now()) @map("created_at")
-  updatedAt            DateTime          @updatedAt @map("updated_at")
-  deletedAt            DateTime?         @map("deleted_at")
-  company              Company           @relation(fields: [companyId], references: [id])
-  employee             Employee          @relation(fields: [employeeId], references: [id])
-  supportingDoc        EmployeeDocument? @relation(fields: [supportingDocId], references: [id])
+  installmentCount     Int                @map("installment_count")
+  interestRate         Float              @map("interest_rate")
+  monthlyPremium       Float              @map("monthly_premium")
+  supportingDocId      String?            @map("supporting_doc_id")
+  createdAt            DateTime           @default(now()) @map("created_at")
+  updatedAt            DateTime           @updatedAt @map("updated_at")
+  deletedAt            DateTime?          @map("deleted_at")
+  company              Company            @relation(fields: [companyId], references: [id])
+  employee             Employee           @relation(fields: [employeeId], references: [id])
+  supportingDoc        EmployeeDocument?  @relation(fields: [supportingDocId], references: [id])
   installments         LoanInstallment[]
+  supportingDocuments  EmployeeDocument[] @relation("LoanDocuments")
 
   @@index([companyId], map: "loan_company_id_fkey")
   @@index([employeeId], map: "loan_employee_id_fkey")
@@ -453,10 +454,13 @@ model EmployeeDocument {
   createdAt    DateTime     @default(now()) @map("created_at")
   documentType DocumentType @default(EMPLOYEE) @map("document_type")
   docTitle     String?      @map("doc_title")
+  loanId       String?      @map("loan_id")
   employee     Employee     @relation(fields: [employeeId], references: [id])
+  loan         Loan?        @relation("LoanDocuments", fields: [loanId], references: [id])
   loans        Loan[]
 
   @@index([employeeId], map: "employee_document_employee_id_fkey")
+  @@index([loanId], map: "employee_document_loan_id_fkey")
   @@map("employee_document")
 }
 
