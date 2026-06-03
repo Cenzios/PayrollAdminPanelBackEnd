@@ -40,6 +40,7 @@ export class AdminUsersService {
           fullName: true,
           email: true,
           role: true,
+          status: true,
           createdAt: true,
           subscriptions: {
             orderBy: { createdAt: 'desc' },
@@ -98,6 +99,7 @@ export class AdminUsersService {
         role: u.role,
         createdAt: u.createdAt,
         currentPlan: activeSub?.plan?.name || 'N/A',
+        userStatus: u.status,
         subscriptionStatus: activeSub?.status || 'NONE',
         companyCount: u._count.companies,
         paymentMethod: u._count.userDocuments > 0 ? 'Manual' : 'Online',
@@ -186,7 +188,7 @@ export class AdminUsersService {
         failedLoginAttempts: user.failedLoginAttempts,
         lockoutUntil: user.lockoutUntil,
         createdAt: user.createdAt,
-        accountStatus: user.lockoutUntil && user.lockoutUntil > new Date() ? 'LOCKED' : 'ACTIVE',
+        accountStatus: user.lockoutUntil && user.lockoutUntil > new Date() ? 'LOCKED' : user.status,
       },
       currentSubscription: activeSub ? {
         planName: activeSub.plan.name,
@@ -232,28 +234,18 @@ export class AdminUsersService {
 
   async updateUserStatus(userId: string, status: string) {
     // Validate status
-    const validStatuses = ['DRAFT', 'PENDING_ACTIVATION', 'ACTIVE', 'EXPIRED', 'CANCELLED', 'FAILED'];
+    const validStatuses = ['ACTIVE', 'SUSPENDED'];
     if (!validStatuses.includes(status)) {
       throw new Error(`Invalid status: ${status}`);
     }
 
-    // Get the latest subscription for the user
-    const latestSubscription = await prisma.subscription.findFirst({
-      where: { userId },
-      orderBy: { createdAt: 'desc' },
-    });
-
-    if (!latestSubscription) {
-      throw new Error('No subscription found for this user');
-    }
-
-    // Update the subscription status
-    const updatedSubscription = await prisma.subscription.update({
-      where: { id: latestSubscription.id },
+    // Update the user status
+    const updatedUser = await prisma.user.update({
+      where: { id: userId },
       data: { status: status as any },
     });
 
-    return updatedSubscription;
+    return updatedUser;
   }
 }
 
