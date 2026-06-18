@@ -19,7 +19,8 @@ export const sendPaymentConfirmationEmail = async (userEmail: string, fullName: 
         to: userEmail,
         subject: 'Payment Confirmed - Welcome to CenzHRM',
         html: `
-            <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+            // <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; padding: 20px; border-radius: 8px;">
                 <h2 style="color: #2c3e50;">Payment Confirmation</h2>
                 <p>Dear ${fullName},</p>
                 <p>We are pleased to inform you that your manual payment has been successfully approved.</p>
