@@ -43,3 +43,32 @@ export const sendPaymentConfirmationEmail = async (userEmail: string, fullName: 
         return { success: false, error };
     }
 };
+
+export const sendPaymentRejectionEmail = async (userEmail: string, fullName: string) => {
+    const mailOptions = {
+        from: `"CenzHRM" <${process.env.EMAIL_FROM}>`,
+        to: userEmail,
+        subject: 'Payment Rejected - Action Required for CenzHRM',
+        html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; padding: 20px; border-radius: 8px;">
+                <h2 style="color: #c0392b;">Payment Rejected</h2>
+                <p>Dear ${fullName},</p>
+                <p>We were unable to verify the bank slip submitted for your manual payment. This may be due to unclear, incomplete or mismatched payment details.</p>
+                <p>To continue activating your subscription, please resubmit a valid bank slip with clear and accurate payment details.</p>
+                <p><a href="https://payrolladmin.cenzios.com" style="display: inline-block; padding: 10px 20px; background-color: #3498db; color: #fff; text-decoration: none; border-radius: 5px;">Resubmit Bank Slip</a></p>
+                <p>For any assistance, please contact our support team.</p>
+                <br>
+                <p>Best regards,<br>Team CenzHRM</p>
+            </div>
+        `,
+    };
+
+    try {
+        const info = await transporter.sendMail(mailOptions);
+        console.log('Email sent: %s', info.messageId);
+        return { success: true, messageId: info.messageId };
+    } catch (error) {
+        console.error('Error sending email:', error);
+        return { success: false, error };
+    }
+};

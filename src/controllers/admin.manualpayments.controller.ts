@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { PrismaClient, DocumentStatus } from '@prisma/client';
-import { sendPaymentConfirmationEmail } from '../services/email.service';
+import { sendPaymentConfirmationEmail, sendPaymentRejectionEmail } from '../services/email.service';
 
 const prisma = new PrismaClient();
 // Get manual payment proofs by status (defaults to PENDING)
@@ -158,11 +158,25 @@ export const rejectPayment = async (req: Request, res: Response) => {
         const document = await prisma.userDocument.update({
             where: { id },
             data: { status: DocumentStatus.REJECTED },
+            include: {
+                user: {
+                    select: {
+                        fullName: true,
+                        email: true,
+                    },
+                },
+            },
+        });
+
+        // Send rejection email asynchronously (don't block the response)
+        // Wrapped in try-catch so email failure doesn't affect the rejection success response
+        sendPaymentRejectionEmail(document.user.email, document.user.fullName).catch(err => {
+            console.error('Failed to send rejection email after payment rejection:', err);
         });
 
         res.status(200).json({
             success: true,
-            message: 'Payment rejected successfully',
+            message: 'Payment rejected successfully and notification email sent',
             data: document,
         });
     } catch (error) {
