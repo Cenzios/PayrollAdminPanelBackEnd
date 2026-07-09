@@ -57,7 +57,7 @@ export const getDashboardSummary = async (range: string = 'yearly') => {
 
   // Calculate Chart Data (Monthly User Registrations for last X months)
   let monthsToFetch = 12; // default yearly
-  if (range === 'monthly') monthsToFetch = 1;
+  if (range === 'monthly') monthsToFetch = 2;
   else if (range === '3months') monthsToFetch = 3;
   else if (range === '6months') monthsToFetch = 6;
   else if (range === 'yearly') monthsToFetch = 12;
