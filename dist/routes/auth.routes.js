@@ -35,7 +35,10 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const authController = __importStar(require("../controllers/auth.controller"));
+const adminProfileController = __importStar(require("../controllers/adminProfile.controller"));
+const requireSuperAdmin_middleware_1 = require("../middlewares/requireSuperAdmin.middleware");
 const router = (0, express_1.Router)();
 router.post('/login', authController.login);
+router.get('/me', requireSuperAdmin_middleware_1.requireSuperAdmin, adminProfileController.getProfileDetails);
 exports.default = router;
 //# sourceMappingURL=auth.routes.js.map

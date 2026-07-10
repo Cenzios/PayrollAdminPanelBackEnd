@@ -22,11 +22,12 @@ const getAllInvoices = async (req, res, next) => {
     try {
         const page = parseInt(req.query.page) || 1;
         const limit = parseInt(req.query.limit) || 10;
-        const { status, billingType, month } = req.query;
+        const { status, billingType, month, search } = req.query;
         const result = await adminRevenue_service_1.default.getAllInvoices(page, limit, {
             status: status,
             billingType: billingType,
-            month: month
+            month: month,
+            search: search
         });
         res.status(200).json({
             success: true,

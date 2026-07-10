@@ -3,10 +3,22 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.changePassword = exports.updateProfile = void 0;
+exports.changePassword = exports.updateProfile = exports.getProfile = void 0;
 const client_1 = require("@prisma/client");
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
 const prisma = new client_1.PrismaClient();
+const getProfile = async (userId) => {
+    return await prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+            id: true,
+            fullName: true,
+            email: true,
+            role: true,
+        },
+    });
+};
+exports.getProfile = getProfile;
 const updateProfile = async (userId, data) => {
     if (data.email) {
         const existingUser = await prisma.user.findFirst({

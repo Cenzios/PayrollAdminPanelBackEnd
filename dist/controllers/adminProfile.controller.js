@@ -33,8 +33,25 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.updatePassword = exports.updateProfileDetails = void 0;
+exports.updatePassword = exports.updateProfileDetails = exports.getProfileDetails = void 0;
 const adminProfileService = __importStar(require("../services/adminProfile.service"));
+const getProfileDetails = async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const user = await adminProfileService.getProfile(userId);
+        return res.status(200).json({
+            success: true,
+            data: user,
+        });
+    }
+    catch (error) {
+        return res.status(400).json({
+            success: false,
+            message: error.message || 'Failed to fetch profile',
+        });
+    }
+};
+exports.getProfileDetails = getProfileDetails;
 const updateProfileDetails = async (req, res) => {
     try {
         const userId = req.user.id;

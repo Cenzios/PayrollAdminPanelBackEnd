@@ -12,6 +12,7 @@ export declare class AdminUsersService {
             currentPlan: string;
             subscriptionStatus: import(".prisma/client").$Enums.SubscriptionStatus;
             companyCount: number;
+            paymentMethod: string;
             employeeCount: number;
             lastLogin: {
                 ip: string;
@@ -38,6 +39,25 @@ export declare class AdminUsersService {
             lockoutUntil: Date | null;
             createdAt: Date;
             accountStatus: string;
+        };
+        currentSubscription: {
+            planName: string;
+            price: number;
+            status: import(".prisma/client").$Enums.SubscriptionStatus;
+            startDate: Date;
+            endDate: Date;
+            maxEmployees: number;
+            extraSlots: number;
+        } | null;
+        companies: {
+            id: string;
+            name: string;
+            employeeCount: number;
+        }[];
+        stats: {
+            totalEmployees: number;
+            monthlyBill: number;
+            nextPaymentDate: Date;
         };
         subscriptionHistory: {
             id: string;
@@ -82,8 +102,17 @@ export declare class AdminUsersService {
             suspiciousCount: number;
         };
     }>;
-    updateUserStatus(_userId: string, _status: string): Promise<{
-        message: string;
+    updateUserStatus(userId: string, status: string): Promise<{
+        id: string;
+        createdAt: Date;
+        status: import(".prisma/client").$Enums.SubscriptionStatus;
+        deletedAt: Date | null;
+        userId: string;
+        planId: string;
+        selectedAt: Date | null;
+        activatedAt: Date | null;
+        startDate: Date;
+        endDate: Date;
     }>;
 }
 declare const _default: AdminUsersService;
