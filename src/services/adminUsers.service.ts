@@ -1,4 +1,4 @@
-import { Prisma, Role } from '@prisma/client';
+import { Prisma, Role, SubscriptionStatus } from '@prisma/client';
 import prisma from '../config/db';
 
 export class AdminUsersService {
@@ -10,11 +10,15 @@ export class AdminUsersService {
     };
 
     if (filters.status) {
-      where.subscriptions = {
-        some: {
-          status: filters.status as any,
-        },
-      };
+      if (filters.status === 'SUSPENDED') {
+        where.lockoutUntil = { gt: new Date() };
+      } else {
+        where.subscriptions = {
+          some: {
+            status: filters.status as any,
+          },
+        };
+      }
     }
 
     if (filters.planName) {
@@ -40,6 +44,7 @@ export class AdminUsersService {
           fullName: true,
           email: true,
           role: true,
+          lockoutUntil: true,
           createdAt: true,
           subscriptions: {
             orderBy: { createdAt: 'desc' },
@@ -98,7 +103,7 @@ export class AdminUsersService {
         role: u.role,
         createdAt: u.createdAt,
         currentPlan: activeSub?.plan?.name || 'N/A',
-        subscriptionStatus: activeSub?.status || 'NONE',
+        subscriptionStatus: u.lockoutUntil && u.lockoutUntil > new Date() ? 'SUSPENDED' : activeSub?.status || 'NONE',
         companyCount: u._count.companies,
         paymentMethod: u._count.userDocuments > 0 ? 'Manual' : 'Online',
         employeeCount: totalEmployees,
@@ -231,9 +236,39 @@ export class AdminUsersService {
   }
 
   async updateUserStatus(userId: string, status: string) {
-    // Validate status
-    const validStatuses = ['DRAFT', 'PENDING_ACTIVATION', 'ACTIVE', 'EXPIRED', 'CANCELLED', 'FAILED'];
-    if (!validStatuses.includes(status)) {
+    const normalizedStatus = status.toUpperCase();
+
+    if (normalizedStatus === 'SUSPENDED') {
+      const suspendedUser = await prisma.user.update({
+        where: { id: userId },
+        data: {
+          lockoutUntil: new Date('9999-12-31T23:59:59.999Z'),
+        },
+        select: {
+          id: true,
+          lockoutUntil: true,
+        },
+      });
+
+      return {
+        userId: suspendedUser.id,
+        status: 'SUSPENDED',
+        lockoutUntil: suspendedUser.lockoutUntil,
+      };
+    }
+
+    if (normalizedStatus === 'ACTIVE') {
+      await prisma.user.update({
+        where: { id: userId },
+        data: {
+          lockoutUntil: null,
+          failedLoginAttempts: 0,
+        },
+      });
+    }
+
+    const validStatuses = Object.values(SubscriptionStatus);
+    if (!validStatuses.includes(normalizedStatus as SubscriptionStatus)) {
       throw new Error(`Invalid status: ${status}`);
     }
 
@@ -250,7 +285,7 @@ export class AdminUsersService {
     // Update the subscription status
     const updatedSubscription = await prisma.subscription.update({
       where: { id: latestSubscription.id },
-      data: { status: status as any },
+      data: { status: normalizedStatus as SubscriptionStatus },
     });
 
     return updatedSubscription;
