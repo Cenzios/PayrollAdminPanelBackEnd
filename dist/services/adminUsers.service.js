@@ -57,13 +57,16 @@ class AdminUsersService {
                     _count: {
                         select: {
                             companies: true,
+                            userDocuments: true,
                         },
                     },
                     companies: {
                         select: {
                             _count: {
                                 select: {
-                                    employees: true,
+                                    employees: {
+                                        where: { deletedAt: null },
+                                    },
                                 },
                             },
                         },
@@ -94,6 +97,7 @@ class AdminUsersService {
                 currentPlan: activeSub?.plan?.name || 'N/A',
                 subscriptionStatus: activeSub?.status || 'NONE',
                 companyCount: u._count.companies,
+                paymentMethod: u._count.userDocuments > 0 ? 'Manual' : 'Online',
                 employeeCount: totalEmployees,
                 lastLogin: lastSession ? {
                     ip: lastSession.ipAddress,
@@ -123,6 +127,13 @@ class AdminUsersService {
                     },
                     orderBy: { createdAt: 'desc' },
                 },
+                companies: {
+                    include: {
+                        _count: {
+                            select: { employees: { where: { deletedAt: null } } }
+                        }
+                    }
+                },
                 invoices: {
                     orderBy: { createdAt: 'desc' },
                 },
@@ -148,6 +159,9 @@ class AdminUsersService {
                 where: { userId, isSuspicious: true }
             }),
         };
+        const activeSub = user.subscriptions[0];
+        const totalEmployees = user.companies.reduce((acc, comp) => acc + comp._count.employees, 0);
+        const monthlyBill = activeSub?.plan?.price || 0;
         return {
             user: {
                 id: user.id,
@@ -160,6 +174,27 @@ class AdminUsersService {
                 lockoutUntil: user.lockoutUntil,
                 createdAt: user.createdAt,
                 accountStatus: user.lockoutUntil && user.lockoutUntil > new Date() ? 'LOCKED' : 'ACTIVE',
+            },
+            currentSubscription: activeSub ? {
+                planName: activeSub.plan.name,
+                price: activeSub.plan.price,
+                status: activeSub.status,
+                startDate: activeSub.startDate,
+                endDate: activeSub.endDate,
+                maxEmployees: activeSub.plan.maxEmployees,
+                extraSlots: activeSub.addons
+                    .filter(addon => addon.type === 'EMPLOYEE_EXTRA')
+                    .reduce((acc, addon) => acc + addon.value, 0),
+            } : null,
+            companies: user.companies.map(c => ({
+                id: c.id,
+                name: c.name,
+                employeeCount: c._count.employees
+            })),
+            stats: {
+                totalEmployees,
+                monthlyBill,
+                nextPaymentDate: activeSub?.endDate || null,
             },
             subscriptionHistory: user.subscriptions.map(s => ({
                 id: s.id,
@@ -181,10 +216,23 @@ class AdminUsersService {
             loginSessions: sessionsSummary,
         };
     }
-    async updateUserStatus(_userId, _status) {
-        return {
-            message: 'Status update logic would go here',
-        };
+    async updateUserStatus(userId, status) {
+        const validStatuses = ['DRAFT', 'PENDING_ACTIVATION', 'ACTIVE', 'EXPIRED', 'CANCELLED', 'FAILED'];
+        if (!validStatuses.includes(status)) {
+            throw new Error(`Invalid status: ${status}`);
+        }
+        const latestSubscription = await db_1.default.subscription.findFirst({
+            where: { userId },
+            orderBy: { createdAt: 'desc' },
+        });
+        if (!latestSubscription) {
+            throw new Error('No subscription found for this user');
+        }
+        const updatedSubscription = await db_1.default.subscription.update({
+            where: { id: latestSubscription.id },
+            data: { status: status },
+        });
+        return updatedSubscription;
     }
 }
 exports.AdminUsersService = AdminUsersService;

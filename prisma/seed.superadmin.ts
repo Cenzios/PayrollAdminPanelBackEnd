@@ -42,7 +42,7 @@ async function createSuperAdmin() {
         }
 
         console.log('Creating new Super Admin...');
-        const hashedPassword = await bcrypt.hash(password, 10);
+        const hashedPassword = await bcrypt.hash(password, 12);
 
         const admin = await prisma.user.create({
             data: {

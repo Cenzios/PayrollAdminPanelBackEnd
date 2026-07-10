@@ -7,21 +7,37 @@ const dotenv_1 = __importDefault(require("dotenv"));
 const app_1 = __importDefault(require("./app"));
 const db_1 = __importDefault(require("./config/db"));
 dotenv_1.default.config();
-const PORT = Number(process.env.PORT) || 6092;
+const PORT = Number(process.env.PORT);
 const HOST = '0.0.0.0';
 const startServer = async () => {
+    console.log('🎬 Starting server initialization...');
+    if (!PORT) {
+        console.error('❌ CRITICAL ERROR: PORT is not defined in environment variables.');
+        process.exit(1);
+    }
+    if (!process.env.DATABASE_URL) {
+        console.error('❌ CRITICAL ERROR: DATABASE_URL is not defined in environment variables.');
+        process.exit(1);
+    }
     try {
+        console.log('⏳ Connecting to database...');
         await db_1.default.$connect();
         console.log('✅ Database connected successfully');
-        app_1.default.listen(PORT, HOST, () => {
-            console.log(`🚀 Server is running on http://${HOST}:${PORT}`);
+        const server = app_1.default.listen(PORT, HOST, () => {
+            console.log('--------------------------------------------------');
+            console.log(`🚀 BACKEND SERVER IS LIVE`);
+            console.log(`📡 Internal URL: http://${HOST}:${PORT}`);
+            console.log(`🩺 Health Check: http://${HOST}:${PORT}/health`);
             console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
-            console.log(`📍 Health check: http://${HOST}:${PORT}/health`);
-            console.log(`📡 Public access: admin.server.payroll.cenzios.com`);
+            console.log('--------------------------------------------------');
+        });
+        server.on('error', (error) => {
+            console.error('❌ Server failed to start:', error);
+            process.exit(1);
         });
     }
     catch (error) {
-        console.error('❌ Failed to start server:', error);
+        console.error('❌ CRITICAL STARTUP ERROR:', error);
         process.exit(1);
     }
 };

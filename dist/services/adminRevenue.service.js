@@ -11,10 +11,29 @@ class AdminRevenueService {
             where: { status: 'PAID' },
             _sum: { totalAmount: true },
         });
+        const onlineRevenue = await db_1.default.invoice.aggregate({
+            where: {
+                status: 'PAID',
+                paymentIntentId: { not: null }
+            },
+            _sum: { totalAmount: true },
+        });
+        const manualRevenue = await db_1.default.invoice.aggregate({
+            where: {
+                status: 'PAID',
+                paymentIntentId: null
+            },
+            _sum: { totalAmount: true },
+        });
+        const overdueCount = await db_1.default.invoice.count({
+            where: { status: 'OVERDUE' }
+        });
         return {
             totalRevenue: totalRevenue._sum.totalAmount || 0,
+            onlineRevenue: onlineRevenue._sum.totalAmount || 0,
+            manualRevenue: manualRevenue._sum.totalAmount || 0,
+            overdueCount,
             monthlyRevenue: 0,
-            arpu: 0,
         };
     }
     async getAllInvoices(page, limit, filters) {
@@ -26,6 +45,11 @@ class AdminRevenueService {
             where.billingType = filters.billingType;
         if (filters.month)
             where.billingMonth = filters.month;
+        if (filters.search) {
+            where.user = {
+                fullName: { contains: filters.search }
+            };
+        }
         const [invoices, total] = await Promise.all([
             db_1.default.invoice.findMany({
                 where,

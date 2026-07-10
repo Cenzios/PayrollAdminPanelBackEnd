@@ -1,8 +1,10 @@
 export declare class AdminRevenueService {
     getRevenueSummary(): Promise<{
         totalRevenue: number;
+        onlineRevenue: number;
+        manualRevenue: number;
+        overdueCount: number;
         monthlyRevenue: number;
-        arpu: number;
     }>;
     getAllInvoices(page: number, limit: number, filters: any): Promise<{
         invoices: ({
@@ -14,6 +16,7 @@ export declare class AdminRevenueService {
             id: string;
             createdAt: Date;
             status: import(".prisma/client").$Enums.InvoiceStatus;
+            deletedAt: Date | null;
             totalAmount: number;
             userId: string;
             subscriptionId: string;
@@ -25,7 +28,10 @@ export declare class AdminRevenueService {
             registrationFee: number;
             paymentIntentId: string | null;
             paidAt: Date | null;
-            deletedAt: Date | null;
+            billingPeriodEnd: Date | null;
+            billingPeriodStart: Date | null;
+            dueDate: Date | null;
+            planNameSnapshot: string | null;
         })[];
         pagination: {
             total: number;

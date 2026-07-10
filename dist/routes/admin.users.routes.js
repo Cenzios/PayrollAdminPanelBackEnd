@@ -6,5 +6,6 @@ const requireSuperAdmin_middleware_1 = require("../middlewares/requireSuperAdmin
 const router = (0, express_1.Router)();
 router.get('/', requireSuperAdmin_middleware_1.requireSuperAdmin, adminUsers_controller_1.getAllUsers);
 router.get('/:userId', requireSuperAdmin_middleware_1.requireSuperAdmin, adminUsers_controller_1.getUserById);
+router.put('/:userId/subscription/status', requireSuperAdmin_middleware_1.requireSuperAdmin, adminUsers_controller_1.updateUserSubscriptionStatus);
 exports.default = router;
 //# sourceMappingURL=admin.users.routes.js.map
