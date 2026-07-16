@@ -43,3 +43,22 @@ export const getAllInvoices = async (
     next(error);
   }
 };
+
+export const sendReminder = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const { invoiceId } = req.params;
+    const result = await adminRevenueService.sendReminder(invoiceId);
+
+    res.status(200).json({
+      success: true,
+      message: 'Reminder email sent successfully',
+      data: result,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
