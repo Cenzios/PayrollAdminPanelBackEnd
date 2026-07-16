@@ -6,7 +6,7 @@ export class AdminUsersService {
     const skip = (page - 1) * limit;
 
     const where: Prisma.UserWhereInput = {
-      role: Role.USER, // Typically admin only cares about normal users in this view
+      role: Role.USER,
     };
 
     if (filters.status) {
@@ -93,7 +93,6 @@ export class AdminUsersService {
       const activeSub = u.subscriptions[0];
       const lastSession = u.loginSessions[0];
 
-      // Calculate total employees across all companies
       const totalEmployees = u.companies.reduce((acc, comp) => acc + comp._count.employees, 0);
 
       return {
@@ -164,7 +163,6 @@ export class AdminUsersService {
       throw new Error('User not found');
     }
 
-    // Login sessions summary
     const sessionsSummary = {
       totalSessions: await prisma.userLoginSession.count({ where: { userId } }),
       lastTen: user.loginSessions,
@@ -175,9 +173,6 @@ export class AdminUsersService {
 
     const activeSub = user.subscriptions[0];
     const totalEmployees = user.companies.reduce((acc, comp) => acc + comp._count.employees, 0);
-
-    // Calculate Monthly Bill (Basic Plan Price + Registration Fee snapshot or similar logic)
-    // For now, let's use the Price from Plan.
     const monthlyBill = activeSub?.plan?.price || 0;
 
     return {
@@ -243,6 +238,7 @@ export class AdminUsersService {
         where: { id: userId },
         data: {
           lockoutUntil: new Date('9999-12-31T23:59:59.999Z'),
+          status: 'SUSPENDED', // set user status to SUSPENDED
         },
         select: {
           id: true,
@@ -263,6 +259,7 @@ export class AdminUsersService {
         data: {
           lockoutUntil: null,
           failedLoginAttempts: 0,
+          status: 'ACTIVE', // set user status to ACTIVE
         },
       });
     }
@@ -272,7 +269,6 @@ export class AdminUsersService {
       throw new Error(`Invalid status: ${status}`);
     }
 
-    // Get the latest subscription for the user
     const latestSubscription = await prisma.subscription.findFirst({
       where: { userId },
       orderBy: { createdAt: 'desc' },
@@ -282,7 +278,6 @@ export class AdminUsersService {
       throw new Error('No subscription found for this user');
     }
 
-    // Update the subscription status
     const updatedSubscription = await prisma.subscription.update({
       where: { id: latestSubscription.id },
       data: { status: normalizedStatus as SubscriptionStatus },
