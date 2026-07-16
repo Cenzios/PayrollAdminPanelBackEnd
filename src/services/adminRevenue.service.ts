@@ -1,4 +1,5 @@
 import prisma from '../config/db';
+import { sendPaymentReminderEmail } from './email.service';
 
 export class AdminRevenueService {
   async getRevenueSummary() {
@@ -77,6 +78,34 @@ export class AdminRevenueService {
         totalPages: Math.ceil(total / limit),
       },
     };
+  }
+
+  async sendReminder(invoiceId: string) {
+    const invoice = await prisma.invoice.findUnique({
+      where: { id: invoiceId },
+      include: {
+        user: {
+          select: { email: true, fullName: true },
+        },
+      },
+    });
+
+    if (!invoice) {
+      throw new Error('Invoice not found');
+    }
+
+    if (invoice.status !== 'OVERDUE') {
+      throw new Error('Reminder can only be sent for overdue invoices');
+    }
+
+    const result = await sendPaymentReminderEmail(
+      invoice.user.email,
+      invoice.user.fullName,
+      invoice.billingMonth,
+      invoice.totalAmount
+    );
+
+    return result;
   }
 
   async getRevenueStats() {
