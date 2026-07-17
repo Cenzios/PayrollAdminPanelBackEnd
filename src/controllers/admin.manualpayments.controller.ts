@@ -110,8 +110,8 @@ export const approvePayment = async (req: Request, res: Response) => {
                         billingMonth: new Date().toISOString().slice(0, 7), // e.g., "2026-05"
                         employeeCount: currentEmployeeCount,
                         pricePerEmployee: plan.employeePrice,
-                        registrationFee: plan.registrationFee,
-                        totalAmount: plan.registrationFee + currentEmployeeCount * plan.employeePrice,
+                        registrationFee: 0,
+                        totalAmount: currentEmployeeCount * plan.employeePrice,
                         status: 'PAID',
                         paidAt: new Date(),
                         dueDate: new Date(),
