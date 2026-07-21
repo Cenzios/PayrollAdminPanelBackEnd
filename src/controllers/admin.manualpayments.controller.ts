@@ -82,44 +82,124 @@ export const approvePayment = async (req: Request, res: Response) => {
             });
 
             if (pendingSub) {
+                // ✅ SCENARIO A: New signup — activate PENDING_ACTIVATION subscription
                 await tx.subscription.update({
                     where: { id: pendingSub.id },
                     data: {
                         status: 'ACTIVE',
                         activatedAt: new Date(),
+                        startDate: new Date(),
+                        endDate: new Date(new Date().setMonth(new Date().getMonth() + 1)),
                     },
                 });
 
                 const plan = pendingSub.plan;
 
-                // Calculate current active employee count for the user's companies
-                const currentEmployeeCount = await tx.employee.count({
+                // Mark any pre-existing PENDING/OVERDUE invoices for this subscription as PAID
+                // (avoids duplicates if selectPlan already created an invoice)
+                const existingInvoice = await tx.invoice.findFirst({
                     where: {
-                        company: { ownerId: targetUserId },
-                        deletedAt: null,
+                        subscriptionId: pendingSub.id,
+                        billingType: 'REGISTRATION',
+                        status: { in: ['PENDING', 'OVERDUE'] },
                     },
                 });
 
-                // Create the Initial "Registration" Invoice
-                await tx.invoice.create({
-                    data: {
-                        userId: targetUserId,
-                        subscriptionId: pendingSub.id,
-                        planId: plan.id,
-                        billingType: 'REGISTRATION',
-                        billingMonth: new Date().toISOString().slice(0, 7), // e.g., "2026-05"
-                        employeeCount: currentEmployeeCount,
-                        pricePerEmployee: plan.employeePrice,
-                        registrationFee: plan.registrationFee,
-                        totalAmount: plan.registrationFee + currentEmployeeCount * plan.employeePrice,
-                        status: 'PAID',
-                        paidAt: new Date(),
-                        dueDate: new Date(),
-                        billingPeriodStart: pendingSub.startDate,
-                        billingPeriodEnd: pendingSub.endDate,
-                        planNameSnapshot: plan.name,
-                    },
+                if (existingInvoice) {
+                    await tx.invoice.update({
+                        where: { id: existingInvoice.id },
+                        data: { status: 'PAID', paidAt: new Date() },
+                    });
+                    console.log(`🧾 [MANUAL APPROVAL] Existing REGISTRATION invoice ${existingInvoice.id} marked as PAID`);
+                } else {
+                    // Calculate current active employee count for the user's companies
+                    const currentEmployeeCount = await tx.employee.count({
+                        where: {
+                            company: { ownerId: targetUserId },
+                            deletedAt: null,
+                        },
+                    });
+
+                    // Create the Initial "Registration" Invoice
+                    await tx.invoice.create({
+                        data: {
+                            userId: targetUserId,
+                            subscriptionId: pendingSub.id,
+                            planId: plan.id,
+                            billingType: 'REGISTRATION',
+                            billingMonth: new Date().toISOString().slice(0, 7),
+                            employeeCount: currentEmployeeCount,
+                            pricePerEmployee: plan.employeePrice,
+                            registrationFee: plan.registrationFee,
+                            totalAmount: plan.registrationFee + currentEmployeeCount * plan.employeePrice,
+                            status: 'PAID',
+                            paidAt: new Date(),
+                            dueDate: new Date(),
+                            billingPeriodStart: new Date(),
+                            billingPeriodEnd: new Date(new Date().setMonth(new Date().getMonth() + 1)),
+                            planNameSnapshot: plan.name,
+                        },
+                    });
+                }
+            } else {
+                // ✅ SCENARIO B: Renewal of a CANCELLED plan — re-activate it
+                const cancelledSub = await tx.subscription.findFirst({
+                    where: { userId: targetUserId, status: 'CANCELLED' },
+                    include: { plan: true },
+                    orderBy: { createdAt: 'desc' },
                 });
+
+                if (cancelledSub) {
+                    console.log(`🔄 [MANUAL APPROVAL] Re-activating CANCELLED subscription ${cancelledSub.id} for user ${targetUserId}`);
+
+                    const newEndDate = new Date();
+                    newEndDate.setMonth(newEndDate.getMonth() + 1);
+
+                    await tx.subscription.update({
+                        where: { id: cancelledSub.id },
+                        data: {
+                            status: 'ACTIVE',
+                            activatedAt: new Date(),
+                            startDate: new Date(),
+                            endDate: newEndDate,
+                        },
+                    });
+
+                    // Mark ALL pending/overdue/failed invoices for this subscription as PAID
+                    const subInvoices = await tx.invoice.findMany({
+                        where: {
+                            subscriptionId: cancelledSub.id,
+                            status: { in: ['PENDING', 'OVERDUE', 'FAILED'] },
+                        },
+                    });
+
+                    for (const inv of subInvoices) {
+                        await tx.invoice.update({
+                            where: { id: inv.id },
+                            data: { status: 'PAID', paidAt: new Date() },
+                        });
+                        console.log(`🧾 [MANUAL APPROVAL] Invoice ${inv.id} (${inv.billingType}) marked as PAID`);
+                    }
+
+                    // Also catch any user-level pending invoices not linked to a specific subscription
+                    if (subInvoices.length === 0) {
+                        const userInvoices = await tx.invoice.findMany({
+                            where: {
+                                userId: targetUserId,
+                                status: { in: ['PENDING', 'OVERDUE', 'FAILED'] },
+                            },
+                        });
+                        for (const inv of userInvoices) {
+                            await tx.invoice.update({
+                                where: { id: inv.id },
+                                data: { status: 'PAID', paidAt: new Date() },
+                            });
+                            console.log(`🧾 [MANUAL APPROVAL] User-level invoice ${inv.id} (${inv.billingType}) marked as PAID`);
+                        }
+                    }
+                } else {
+                    console.warn(`⚠️ [MANUAL APPROVAL] No PENDING_ACTIVATION or CANCELLED subscription found for user ${targetUserId}.`);
+                }
             }
 
             // 4. Mark the User as a Paid User (Remove Trial Restrictions)
