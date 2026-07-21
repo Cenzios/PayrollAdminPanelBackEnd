@@ -3,19 +3,17 @@ import { PrismaClient, DocumentStatus } from '@prisma/client';
 import { sendPaymentConfirmationEmail, sendPaymentRejectionEmail } from '../services/email.service';
 
 const prisma = new PrismaClient();
+
 // Get manual payment proofs by status (defaults to PENDING)
 export const getPendingPayments = async (req: Request, res: Response) => {
     try {
         const { status } = req.query;
-        // Validate or default
         const docStatus = status && Object.values(DocumentStatus).includes(status as any)
             ? status as DocumentStatus
             : DocumentStatus.PENDING;
 
         const documents = await prisma.userDocument.findMany({
-            where: {
-                status: docStatus,
-            },
+            where: { status: docStatus },
             include: {
                 user: {
                     select: {
@@ -25,9 +23,7 @@ export const getPendingPayments = async (req: Request, res: Response) => {
                     },
                 },
             },
-            orderBy: {
-                createdAt: 'desc',
-            },
+            orderBy: { createdAt: 'desc' },
         });
 
         res.status(200).json({
@@ -39,12 +35,12 @@ export const getPendingPayments = async (req: Request, res: Response) => {
         res.status(500).json({ success: false, message: 'Server error while fetching pending payments' });
     }
 };
+
 // Approve a manual payment proof
 export const approvePayment = async (req: Request, res: Response) => {
     const { id } = req.params;
     try {
         const result = await prisma.$transaction(async (tx) => {
-            // Fetch the document with user info first
             const doc = await tx.userDocument.findUnique({
                 where: { id },
                 include: { user: true }
@@ -61,7 +57,7 @@ export const approvePayment = async (req: Request, res: Response) => {
                 data: { status: DocumentStatus.APPROVED },
             });
 
-            // 2. Cancel Any Existing Trial (or Previous) Subscription
+            // 2. Cancel any existing active subscription
             const currentActive = await tx.subscription.findFirst({
                 where: { userId: targetUserId, status: 'ACTIVE' },
             });
@@ -75,7 +71,7 @@ export const approvePayment = async (req: Request, res: Response) => {
                 });
             }
 
-            // 3. Activate the Pending Paid Subscription
+            // 3. Activate the pending paid subscription
             const pendingSub = await tx.subscription.findFirst({
                 where: { userId: targetUserId, status: 'PENDING_ACTIVATION' },
                 include: { plan: true },
@@ -202,7 +198,7 @@ export const approvePayment = async (req: Request, res: Response) => {
                 }
             }
 
-            // 4. Mark the User as a Paid User (Remove Trial Restrictions)
+            // 4. Mark user as paid (remove trial restrictions)
             await tx.user.update({
                 where: { id: targetUserId },
                 data: { isTrialUser: false },
@@ -214,8 +210,7 @@ export const approvePayment = async (req: Request, res: Response) => {
             timeout: 25000
         });
 
-        // Send confirmation email asynchronously (don't block the response)
-        // Wrapped in try-catch to ensure failure sending email doesn't affect the approval success response
+        // Send confirmation email
         sendPaymentConfirmationEmail(result.userEmail, result.fullName).catch(err => {
             console.error('Failed to send confirmation email after approval:', err);
         });
@@ -248,8 +243,6 @@ export const rejectPayment = async (req: Request, res: Response) => {
             },
         });
 
-        // Send rejection email asynchronously (don't block the response)
-        // Wrapped in try-catch so email failure doesn't affect the rejection success response
         sendPaymentRejectionEmail(document.user.email, document.user.fullName).catch(err => {
             console.error('Failed to send rejection email after payment rejection:', err);
         });
