@@ -2,12 +2,13 @@ import { Request, Response, NextFunction } from 'express';
 import * as dashboardService from '../services/adminDashboard.service';
 
 export const getDashboardStats = async (
-  _req: Request,
+  req: Request,
   res: Response,
   next: NextFunction
 ): Promise<void> => {
   try {
-    const stats = await dashboardService.getDashboardSummary();
+    const range = req.query.range as string || 'yearly';
+    const stats = await dashboardService.getDashboardSummary(range);
 
     res.status(200).json({
       success: true,

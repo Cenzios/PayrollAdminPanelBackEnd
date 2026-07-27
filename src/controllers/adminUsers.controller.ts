@@ -69,7 +69,7 @@ export const updateUserSubscriptionStatus = async (
 
     res.status(200).json({
       success: true,
-      message: 'User subscription status updated successfully',
+      message: 'User status updated successfully',
       data: result,
     });
   } catch (error: any) {

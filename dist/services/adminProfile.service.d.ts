@@ -1,3 +1,9 @@
+export declare const getProfile: (userId: string) => Promise<{
+    id: string;
+    email: string;
+    fullName: string;
+    role: import(".prisma/client").$Enums.Role;
+} | null>;
 export declare const updateProfile: (userId: string, data: {
     fullName?: string;
     email?: string;

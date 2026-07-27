@@ -15,6 +15,7 @@ export declare class AdminSubscriptionsService {
         id: string;
         createdAt: Date;
         status: import(".prisma/client").$Enums.SubscriptionStatus;
+        deletedAt: Date | null;
         userId: string;
         planId: string;
         selectedAt: Date | null;

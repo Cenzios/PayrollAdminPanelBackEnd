@@ -2,7 +2,7 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
-export const getDashboardSummary = async () => {
+export const getDashboardSummary = async (range: string = 'yearly') => {
   const [
     activeUsers,
     totalCompanies,
@@ -55,9 +55,15 @@ export const getDashboardSummary = async () => {
     resourceType: log.resourceType
   }));
 
-  // Calculate Chart Data (Monthly User Registrations for last 12 months)
+  // Calculate Chart Data (Monthly User Registrations for last X months)
+  let monthsToFetch = 12; // default yearly
+  if (range === 'monthly') monthsToFetch = 2;
+  else if (range === '3months') monthsToFetch = 3;
+  else if (range === '6months') monthsToFetch = 6;
+  else if (range === 'yearly') monthsToFetch = 12;
+
   const chartData = [];
-  for (let i = 11; i >= 0; i--) {
+  for (let i = monthsToFetch - 1; i >= 0; i--) {
     const d = new Date();
     d.setMonth(d.getMonth() - i);
     const monthName = d.toLocaleString('default', { month: 'short' });

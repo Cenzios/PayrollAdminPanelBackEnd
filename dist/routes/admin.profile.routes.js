@@ -38,6 +38,7 @@ const adminProfileController = __importStar(require("../controllers/adminProfile
 const requireSuperAdmin_middleware_1 = require("../middlewares/requireSuperAdmin.middleware");
 const router = (0, express_1.Router)();
 router.use(requireSuperAdmin_middleware_1.requireSuperAdmin);
+router.get('/details', adminProfileController.getProfileDetails);
 router.patch('/update', adminProfileController.updateProfileDetails);
 router.post('/change-password', adminProfileController.updatePassword);
 exports.default = router;

@@ -1,0 +1,46 @@
+[33mf07cea2[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mPathumDev[m[33m, [m[1;31morigin/QA[m[33m)[m Merge pull request #24 from Cenzios/PathumDev
+[33mce0a862[m[33m ([m[1;31morigin/PathumDev[m[33m)[m fixed the build error
+[33m21533a8[m Merge pull request #23 from Cenzios/PathumDev
+[33m4369b78[m update email service
+[33m705247c[m Merge pull request #22 from Cenzios/PathumDev
+[33mdacf545[m update account suspend
+[33mc59227a[m Merge pull request #20 from Cenzios/PathumDev
+[33md8f679e[m update app.ts
+[33mc06db1d[m Merge pull request #18 from Cenzios/PathumDev
+[33m801c5eb[m update docker file 2
+[33mce14630[m Merge pull request #17 from Cenzios/PathumDev
+[33mf869e0f[m update docker file
+[33mc321f7d[m[33m ([m[1;32mQA[m[33m)[m Implementing Financial & Invoice AnalyticsPage U
+[33m6c11067[m update user
+[33me4478aa[m update page
+[33m59deb66[m fixed admin error
+[33mbdc927b[m update manual payment
+[33m327ec8e[m update
+[33mabb8ead[m fixed deleted employee show bug
+[33m4896c77[m update slot
+[33me23fe2a[m fixed setting bugs
+[33m797b9f5[m fixed bugs
+[33mf7d62f9[m name
+[33m054bd2b[m[33m ([m[1;31morigin/production[m[33m, [m[1;31morigin/main[m[33m, [m[1;32mmain[m[33m)[m fixed build error
+[33m7c03630[m updated setting page
+[33mf444483[m update plan edit
+[33mff4850b[m impl user model
+[33m5f44039[m update notification functions
+[33mbfc85a2[m cahnged docker file
+[33mad91c23[m change env
+[33mbf7ecf8[m add no-cache openssl
+[33mc1124bc[m fix bad request error
+[33mb06d758[m fixed deploy errors
+[33mc43c802[m add admin user name
+[33m6bbc49c[m fixed error
+[33m53750b8[m port change
+[33m49e26ba[m update setting page
+[33mc499612[m UI change
+[33m2818b01[m update user and company
+[33m9bdfcab[m create docker file
+[33m520d2dc[m update backend API
+[33mde92944[m add Subscription, and Revenue APIs
+[33m682cc09[m add other APIes
+[33maa9a29d[m dashboard and login API implemented
+[33mb6d87a2[m update
+[33m46a8065[m first commit
