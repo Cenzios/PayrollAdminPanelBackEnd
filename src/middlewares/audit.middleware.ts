@@ -1,24 +1,30 @@
 import { Request, Response, NextFunction } from 'express';
 import prisma from '../config/db';
+import { adminPathSegments, firstUuid, resolveAdminAction } from '../utils/auditAction';
 
 const MUTATION_METHODS: ReadonlySet<string> = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MAX_FIELD_LENGTH = 191;
 
 interface AuditTarget {
+  action: string;
   resourceType: string;
   resourceId: string | null;
 }
 
-/** `/api/admin/users/<id>/status` -> { resourceType: 'users', resourceId: '<id>' } */
-const _resolveTarget = (originalUrl: string): AuditTarget => {
-  const segments = originalUrl.split('?')[0].split('/').filter((part) => part.length > 0);
-  const adminIndex = segments.indexOf('admin');
-  const rest = adminIndex >= 0 ? segments.slice(adminIndex + 1) : segments;
-  return {
-    resourceType: rest[0] ?? 'unknown',
-    resourceId: rest.find((part) => UUID_PATTERN.test(part)) ?? null,
-  };
+const _bodyField = (body: unknown, field: string): unknown =>
+  typeof body === 'object' && body !== null ? (body as Record<string, unknown>)[field] : undefined;
+
+/** `PUT /api/admin/users/<id>/status {status:'SUSPENDED'}` -> { action: 'SUSPEND_USER', resourceType: 'users', resourceId: '<id>' } */
+const _resolveTarget = (req: Request): AuditTarget => {
+  const segments = adminPathSegments(req.originalUrl);
+  const resourceType = segments[0] ?? 'unknown';
+  const action = resolveAdminAction(req.method, segments, _bodyField(req.body, 'status'))
+    ?? `${req.method}_${resourceType.toUpperCase()}`;
+  // A notification targets the user in the body (the URL has no id)
+  const bodyUserId = _bodyField(req.body, 'userId');
+  const resourceId = firstUuid(segments)
+    ?? (action === 'SEND_NOTIFICATION' && typeof bodyUserId === 'string' ? firstUuid([bodyUserId]) : null);
+  return { action, resourceType, resourceId };
 };
 
 const truncate = (value: string): string => value.slice(0, MAX_FIELD_LENGTH);
@@ -38,12 +44,12 @@ export const auditAdminMutations = (req: Request, res: Response, next: NextFunct
     const admin = req.user;
     if (!admin) return;
 
-    const { resourceType, resourceId } = _resolveTarget(req.originalUrl);
+    const { action, resourceType, resourceId } = _resolveTarget(req);
     prisma.auditLog.create({
       data: {
         userId: admin.id,
         loginSessionId: admin.sid,
-        action: `${req.method}_${resourceType.toUpperCase()}`,
+        action,
         resourceType: truncate(`admin-${resourceType}`),
         resourceId,
         httpMethod: req.method,

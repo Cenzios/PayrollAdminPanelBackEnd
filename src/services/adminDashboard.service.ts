@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 import prisma from '../config/db';
 import { moneyToString, sumMoney } from '../utils/money';
+import { describeActivities } from './activityLabels.service';
 
 /** Customer-API auth calls that are not user actions (hidden from the activity feed). */
 const AUTH_NOISE_FILTERS: Prisma.AuditLogWhereInput[] = [
@@ -15,7 +16,16 @@ interface DashboardSummaryDto {
   totalEmployees: number;
   monthlyRevenue: string;
   totalIncome: string;
-  recentActivities: { id: string; action: string; userName: string; createdAt: Date; resourceType: string | null; endpoint: string }[];
+  recentActivities: {
+    id: string;
+    action: string;
+    /** Specific label for admin actions ("Approved payment for Jane Doe"); null for customer activity. */
+    description: string | null;
+    userName: string;
+    createdAt: Date;
+    resourceType: string | null;
+    endpoint: string;
+  }[];
   /** Chart for the requested `range` (kept for backward compatibility). */
   chartData: ChartPoint[];
   /** Chart for every range, so the panel needs a single summary request. */
@@ -99,9 +109,11 @@ export const getDashboardSummary = async (range: string = 'yearly'): Promise<Das
   const monthlyRevenue = sumMoney(currentMonthInvoices.map((inv) => inv.totalAmount)).toString();
 
   // Format activities for frontend
-  const recentActivities = recentLogs.map(log => ({
+  const descriptions = await describeActivities(recentLogs);
+  const recentActivities = recentLogs.map((log, i) => ({
     id: log.id,
     action: log.action,
+    description: descriptions[i] ?? null,
     userName: log.user?.fullName || 'System',
     createdAt: log.createdAt,
     resourceType: log.resourceType,
