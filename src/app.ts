@@ -25,10 +25,18 @@ import { requireSuperAdmin } from './middlewares/requireSuperAdmin.middleware';
 
 const app: Application = express();
 
+// Behind one reverse proxy / load balancer: req.ip is the real client IP (X-Forwarded-For),
+// so rate limits are per client instead of shared by everyone behind the proxy.
+app.set('trust proxy', 1);
+
+// Coarse abuse guard only: normal admin use (dashboards, searches, modals) never gets near it.
+// Login brute-force protection is the stricter limiter in routes/auth.routes.ts.
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 100,
-  message: 'Too many requests from this IP, please try again later.',
+  max: 1000,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'Too many requests, please try again later.' },
 });
 
 app.use(helmet());
