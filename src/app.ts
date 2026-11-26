@@ -6,6 +6,7 @@ import morgan from 'morgan';
 import compression from 'compression';
 import rateLimit from 'express-rate-limit';
 import { errorHandler, notFoundHandler } from './middlewares/error.middleware';
+import { responseEnvelope } from './middlewares/responseEnvelope.middleware';
 
 import authRoutes from './routes/auth.routes';
 import dashboardRoutes from './routes/admin.dashboard.routes';
@@ -31,6 +32,8 @@ const limiter = rateLimit({
 });
 
 app.use(helmet());
+// Standard response envelope for every JSON body (mounted first so limiter/auth errors get it too)
+app.use(responseEnvelope);
 
 // Support multiple comma-separated origins: e.g. CORS_ORIGIN=https://qa.example.com,https://prod.example.com
 const allowedOrigins = (process.env.CORS_ORIGIN || '')
