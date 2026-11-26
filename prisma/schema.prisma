@@ -10,9 +10,9 @@ datasource db {
 model Plan {
   id              String         @id @default(uuid())
   name            String
-  price           Float
-  employeePrice   Float          @default(0) @map("employee_price")
-  registrationFee Float          @default(0) @map("registration_fee")
+  price           Decimal @db.Decimal(19, 4)
+  employeePrice   Decimal          @default(0) @map("employee_price") @db.Decimal(19, 4)
+  registrationFee Decimal          @default(0) @map("registration_fee") @db.Decimal(19, 4)
   maxEmployees    Int            @map("max_employees")
   maxCompanies    Int            @map("max_companies")
   description     String         @default("")
@@ -133,12 +133,12 @@ model Employee {
   updatedAt           DateTime             @updatedAt @map("updated_at")
   deletedAt           DateTime?            @map("deleted_at")
   companyId           String               @map("company_id")
-  otRate              Float                @default(0) @map("ot_rate")
+  otRate              Decimal                @default(0) @map("ot_rate") @db.Decimal(19, 4)
   allowanceEnabled    Boolean              @default(false) @map("allowance_enabled")
-  basicSalary         Float                @default(0) @map("basic_salary")
+  basicSalary         Decimal                @default(0) @map("basic_salary") @db.Decimal(19, 4)
   deductionEnabled    Boolean              @default(false) @map("deduction_enabled")
   employeeNIC         String?              @map("employee_nic")
-  epfEtfAmount        Float?               @map("epf_etf_amount")
+  epfEtfAmount        Decimal?               @map("epf_etf_amount") @db.Decimal(19, 4)
   epfNumber           String?              @map("epf_number")
   salaryType          SalaryType           @default(DAILY) @map("salary_type")
   paidLeave           Int                  @default(0) @map("paid_leave")
@@ -158,7 +158,7 @@ model RecurringAllowance {
   id         String   @id @default(uuid())
   employeeId String   @map("employee_id")
   type       String
-  amount     Float
+  amount     Decimal @db.Decimal(19, 4)
   createdAt  DateTime @default(now()) @map("created_at")
   employee   Employee @relation(fields: [employeeId], references: [id])
 
@@ -170,7 +170,7 @@ model RecurringDeduction {
   id         String   @id @default(uuid())
   employeeId String   @map("employee_id")
   type       String
-  amount     Float
+  amount     Decimal @db.Decimal(19, 4)
   createdAt  DateTime @default(now()) @map("created_at")
   employee   Employee @relation(fields: [employeeId], references: [id])
 
@@ -183,29 +183,29 @@ model Salary {
   month             Int
   year              Int
   workingDays       Int               @map("working_days")
-  otHours           Float             @default(0) @map("ot_hours")
-  otAmount          Float             @default(0) @map("ot_amount")
-  salaryAdvance     Float             @default(0) @map("salary_advance")
-  basicPay          Float             @map("basic_pay")
-  employeeEPF       Float             @map("employee_epf")
-  employerEPF       Float             @map("employer_epf")
-  etfAmount         Float             @map("etf_amount")
-  employeeTaxAmount Float             @default(0) @map("employee_tax_amount")
+  otHours           Decimal             @default(0) @map("ot_hours") @db.Decimal(9, 2)
+  otAmount          Decimal             @default(0) @map("ot_amount") @db.Decimal(19, 4)
+  salaryAdvance     Decimal             @default(0) @map("salary_advance") @db.Decimal(19, 4)
+  basicPay          Decimal             @map("basic_pay") @db.Decimal(19, 4)
+  employeeEPF       Decimal             @map("employee_epf") @db.Decimal(19, 4)
+  employerEPF       Decimal             @map("employer_epf") @db.Decimal(19, 4)
+  etfAmount         Decimal             @map("etf_amount") @db.Decimal(19, 4)
+  employeeTaxAmount Decimal             @default(0) @map("employee_tax_amount") @db.Decimal(19, 4)
   employeeEPFRate   Decimal?          @map("employee_epf_rate") @db.Decimal(5, 2)
   employerEPFRate   Decimal?          @map("employer_epf_rate") @db.Decimal(5, 2)
   etfRate           Decimal?          @map("etf_rate") @db.Decimal(5, 2)
   taxConfigId       String?           @map("tax_config_id")
-  netSalary         Float             @map("net_salary")
+  netSalary         Decimal             @map("net_salary") @db.Decimal(19, 4)
   createdAt         DateTime          @default(now()) @map("created_at")
   employeeId        String
   companyId         String
-  allowanceTotal    Float             @default(0) @map("allowance_total")
-  deductionTotal    Float             @default(0) @map("deduction_total")
-  basicSalary       Float             @map("basic_salary")
-  grossSalary       Float             @map("gross_salary")
+  allowanceTotal    Decimal             @default(0) @map("allowance_total") @db.Decimal(19, 4)
+  deductionTotal    Decimal             @default(0) @map("deduction_total") @db.Decimal(19, 4)
+  basicSalary       Decimal             @map("basic_salary") @db.Decimal(19, 4)
+  grossSalary       Decimal             @map("gross_salary") @db.Decimal(19, 4)
   salaryType        SalaryType        @map("salary_type")
-  totalDeduction    Float             @map("total_deduction")
-  loanDeduction     Float             @default(0) @map("loan_deduction")
+  totalDeduction    Decimal             @map("total_deduction") @db.Decimal(19, 4)
+  loanDeduction     Decimal             @default(0) @map("loan_deduction") @db.Decimal(19, 4)
   paidLeave         Int               @default(0) @map("paid_leave")
   leaveDays         Int               @default(0) @map("leave_days")
   sickLeaveDays     Int               @default(0) @map("sick_leave_days")
@@ -225,7 +225,7 @@ model SalaryAllowance {
   id        String   @id @default(uuid())
   salaryId  String   @map("salary_id")
   type      String
-  amount    Float
+  amount    Decimal @db.Decimal(19, 4)
   createdAt DateTime @default(now()) @map("created_at")
   salary    Salary   @relation(fields: [salaryId], references: [id])
 
@@ -237,7 +237,7 @@ model SalaryDeduction {
   id        String   @id @default(uuid())
   salaryId  String   @map("salary_id")
   type      String
-  amount    Float
+  amount    Decimal @db.Decimal(19, 4)
   createdAt DateTime @default(now()) @map("created_at")
   salary    Salary   @relation(fields: [salaryId], references: [id])
 
@@ -288,7 +288,7 @@ model PaymentIntent {
   id             String              @id @default(uuid())
   userId         String              @map("user_id")
   planId         String              @map("plan_id")
-  amount         Float
+  amount         Decimal @db.Decimal(19, 4)
   currency       String              @default("LKR")
   gateway        String              @default("STRIPE")
   status         PaymentIntentStatus @default(CREATED)
@@ -312,9 +312,9 @@ model Invoice {
   billingType        BillingType    @map("billing_type")
   billingMonth       String         @map("billing_month")
   employeeCount      Int            @map("employee_count")
-  pricePerEmployee   Float          @map("price_per_employee")
-  registrationFee    Float          @map("registration_fee")
-  totalAmount        Float          @map("total_amount")
+  pricePerEmployee   Decimal          @map("price_per_employee") @db.Decimal(19, 4)
+  registrationFee    Decimal          @map("registration_fee") @db.Decimal(19, 4)
+  totalAmount        Decimal          @map("total_amount") @db.Decimal(19, 4)
   status             InvoiceStatus  @default(PENDING)
   paymentIntentId    String?        @map("payment_intent_id")
   createdAt          DateTime       @default(now()) @map("created_at")
@@ -406,10 +406,11 @@ model Loan {
   startDate            DateTime           @map("start_date")
   endDate              DateTime           @map("end_date")
   interestRateType     InterestRateType   @map("interest_rate_type")
-  amount               Float
+  amount               Decimal @db.Decimal(19, 4)
   installmentCount     Int                @map("installment_count")
-  interestRate         Float              @map("interest_rate")
-  monthlyPremium       Float              @map("monthly_premium")
+  interestRate         Decimal              @map("interest_rate") @db.Decimal(9, 4)
+  monthlyPremium       Decimal              @map("monthly_premium") @db.Decimal(19, 4)
+  remainingInstallments Int                @default(0) @map("remaining_installments")
   supportingDocId      String?            @map("supporting_doc_id")
   createdAt            DateTime           @default(now()) @map("created_at")
   updatedAt            DateTime           @updatedAt @map("updated_at")
@@ -431,8 +432,8 @@ model LoanInstallment {
   loanId            String                @map("loan_id")
   installmentNumber Int                   @map("installment_number")
   dueDate           DateTime              @map("due_date")
-  amount            Float
-  paidAmount        Float                 @default(0) @map("paid_amount")
+  amount            Decimal @db.Decimal(19, 4)
+  paidAmount        Decimal                 @default(0) @map("paid_amount") @db.Decimal(19, 4)
   status            LoanInstallmentStatus @default(PENDING)
   salaryId          String?               @map("salary_id")
   createdAt         DateTime              @default(now()) @map("created_at")
