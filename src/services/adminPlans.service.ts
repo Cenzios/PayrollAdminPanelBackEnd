@@ -32,7 +32,13 @@ export class AdminPlansService {
         // Only update the fields provided in the request
         const updateData: Prisma.PlanUpdateInput = {};
         if (data.name !== undefined) updateData.name = data.name;
-        if (data.employeePrice !== undefined) updateData.employeePrice = toDecimal(data.employeePrice).toString();
+        if (data.employeePrice !== undefined) {
+            // `price` and `employeePrice` are the same "per employee per month" price (billing uses
+            // employeePrice, the customer plan cards show price) — keep them in sync on every edit.
+            const employeePrice = toDecimal(data.employeePrice).toString();
+            updateData.employeePrice = employeePrice;
+            updateData.price = employeePrice;
+        }
         if (data.registrationFee !== undefined) updateData.registrationFee = toDecimal(data.registrationFee).toString();
         if (data.maxEmployees !== undefined) updateData.maxEmployees = data.maxEmployees;
         if (data.description !== undefined) updateData.description = data.description;
