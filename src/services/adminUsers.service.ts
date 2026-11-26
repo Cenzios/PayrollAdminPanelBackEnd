@@ -1,7 +1,16 @@
-import { Prisma, Role, SubscriptionStatus } from '@prisma/client';
+import { Prisma, Role, SubscriptionStatus, UserStatus } from '@prisma/client';
 import prisma from '../config/db';
 import { HttpError } from '../utils/httpError';
 import { moneyToString } from '../utils/money';
+
+type AccountStatus = 'ACTIVE' | 'SUSPENDED' | 'LOCKED';
+
+/** SUSPENDED = suspended by an admin; LOCKED = temporary lockout after failed logins. */
+const getAccountStatus = (status: UserStatus, lockoutUntil: Date | null): AccountStatus => {
+  if (status === UserStatus.SUSPENDED) return 'SUSPENDED';
+  if (lockoutUntil && lockoutUntil > new Date()) return 'LOCKED';
+  return 'ACTIVE';
+};
 
 export class AdminUsersService {
   async getAllUsers(page: number = 1, limit: number = 10, filters: { planName?: string; status?: string } = {}) {
@@ -47,6 +56,7 @@ export class AdminUsersService {
           email: true,
           role: true,
           lockoutUntil: true,
+          status: true,
           createdAt: true,
           subscriptions: {
             orderBy: { createdAt: 'desc' },
@@ -104,7 +114,9 @@ export class AdminUsersService {
         role: u.role,
         createdAt: u.createdAt,
         currentPlan: activeSub?.plan?.name || 'N/A',
-        subscriptionStatus: u.lockoutUntil && u.lockoutUntil > new Date() ? 'SUSPENDED' : activeSub?.status || 'NONE',
+        // Account status (suspension / login lockout) is reported separately from the subscription
+        userStatus: getAccountStatus(u.status, u.lockoutUntil),
+        subscriptionStatus: activeSub?.status || 'NONE',
         companyCount: u._count.companies,
         paymentMethod: u._count.userDocuments > 0 ? 'Manual' : 'Online',
         employeeCount: totalEmployees,
