@@ -105,8 +105,9 @@ export class AdminUsersService {
             select: {
               _count: {
                 select: {
+                  // Billable employees only, matching the user-details count and customer billing
                   employees: {
-                    where: { deletedAt: null },
+                    where: BILLABLE_EMPLOYEE_WHERE,
                   },
                 },
               },
