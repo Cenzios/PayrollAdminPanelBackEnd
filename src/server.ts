@@ -1,8 +1,7 @@
-import dotenv from 'dotenv';
+// Load .env before any module reads process.env at import time (jwt config, CORS allowlist)
+import 'dotenv/config';
 import app from './app';
 import prisma from './config/db';
-
-dotenv.config();
 
 const PORT = Number(process.env.PORT);
 const HOST = '0.0.0.0';

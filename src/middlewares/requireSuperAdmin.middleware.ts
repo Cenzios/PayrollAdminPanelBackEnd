@@ -1,42 +1,55 @@
 import { Request, Response, NextFunction } from 'express';
-import jwt from 'jsonwebtoken';
-import { jwtConfig } from '../config/jwt';
-
-interface JwtPayload {
-    id: string;
-    email: string;
-    role: string;
-}
+import { Role, UserStatus } from '@prisma/client';
+import prisma from '../config/db';
+import { _decodeAccessToken } from '../services/auth.service';
+import { AccessTokenPayload } from '../types/auth';
+import { getBearerToken } from '../utils/authCookie';
 
 declare global {
     namespace Express {
         interface Request {
-            user?: JwtPayload;
+            user?: AccessTokenPayload;
         }
     }
 }
 
+const unauthorized = (res: Response, message: string): void => {
+    res.status(401).json({
+        success: false,
+        message,
+    });
+};
+
+/**
+ * Requires a valid access token bound to a live (not logged-out) login session
+ * of an active SUPER_ADMIN user.
+ */
 export const requireSuperAdmin = async (
     req: Request,
     res: Response,
     next: NextFunction
 ): Promise<void> => {
     try {
-        const authHeader = req.headers.authorization;
-
-        if (!authHeader || !authHeader.startsWith('Bearer ')) {
-            res.status(401).json({
-                success: false,
-                message: 'No token provided',
-            });
+        // Already verified earlier in this request (app-level guard + route-level guard)
+        if (res.locals.superAdminVerified === true && req.user) {
+            next();
             return;
         }
 
-        const token = authHeader.split(' ')[1];
+        const token = getBearerToken(req);
+        if (!token) {
+            unauthorized(res, 'No token provided');
+            return;
+        }
 
-        const decoded = jwt.verify(token, jwtConfig.secret) as JwtPayload;
+        // Rejects expired, malformed and legacy (sid-less) tokens
+        const decoded = _decodeAccessToken(token);
+        if (!decoded) {
+            unauthorized(res, 'Invalid or expired token');
+            return;
+        }
 
-        if (decoded.role !== 'SUPER_ADMIN') {
+        if (decoded.role !== Role.SUPER_ADMIN) {
             res.status(403).json({
                 success: false,
                 message: 'Access denied. Super Admin rights required.',
@@ -44,12 +57,31 @@ export const requireSuperAdmin = async (
             return;
         }
 
+        const session = await prisma.userLoginSession.findUnique({
+            where: { id: decoded.sid },
+            select: {
+                userId: true,
+                logoutAt: true,
+                user: { select: { role: true, status: true, lockoutUntil: true } },
+            },
+        });
+
+        const isSessionValid = session !== null
+            && session.userId === decoded.id
+            && session.logoutAt === null
+            && session.user.role === Role.SUPER_ADMIN
+            && session.user.status !== UserStatus.SUSPENDED
+            && (session.user.lockoutUntil === null || session.user.lockoutUntil <= new Date());
+
+        if (!isSessionValid) {
+            unauthorized(res, 'Session expired. Please log in again.');
+            return;
+        }
+
         req.user = decoded;
+        res.locals.superAdminVerified = true;
         next();
     } catch (error) {
-        res.status(401).json({
-            success: false,
-            message: 'Invalid or expired token',
-        });
+        next(error);
     }
 };

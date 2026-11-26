@@ -1,5 +1,6 @@
 import express, { Application } from 'express';
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import compression from 'compression';
@@ -37,25 +38,30 @@ const allowedOrigins = (process.env.CORS_ORIGIN || '')
   .map(o => o.trim())
   .filter(Boolean);
 
+if (allowedOrigins.length === 0) {
+  console.warn('⚠️  CORS_ORIGIN is not set: all browser origins are allowed. Set it in production.');
+}
+
 app.use(cors({
   origin: (origin, callback) => {
     // Allow requests with no origin (mobile apps, curl, server-to-server)
     if (!origin) return callback(null, true);
     // If no CORS_ORIGIN set, allow all
     if (allowedOrigins.length === 0) return callback(null, true);
-    if (allowedOrigins.includes(origin)) {
-      return callback(null, true);
-    }
-    return callback(new Error(`CORS: Origin '${origin}' is not allowed`));
+    // Unknown origins get no CORS headers (browser blocks the response) instead of a 500
+    return callback(null, allowedOrigins.includes(origin));
   },
+  // Required for the HttpOnly refresh-token cookie
   credentials: true,
 }));
 app.use(morgan('dev'));
 app.use(compression());
-app.use(express.json());
+app.use(express.json({ limit: '1mb' }));
+app.use(cookieParser());
 app.use(express.urlencoded({ extended: true }));
 
-app.use('/api/admin', limiter);
+// Every /api/admin/* route requires a SUPER_ADMIN session (route files also guard their own routes)
+app.use('/api/admin', limiter, requireSuperAdmin);
 
 app.get('/health', (_req, res) => {
   res.status(200).json({
@@ -74,13 +80,13 @@ app.use('/api/admin/users', usersRoutes); // Protected inside the route file
 app.use('/api/admin/companies', companiesRoutes); // Protected inside the route file
 app.use('/api/admin/subscriptions', subscriptionsRoutes); // Protected inside the route file
 app.use('/api/admin/plans', plansRoutes); // Protected inside the route file
-app.use('/api/admin/security', requireSuperAdmin, securityRoutes);
-app.use('/api/admin/audit', requireSuperAdmin, auditRoutes);
+app.use('/api/admin/security', securityRoutes); // Protected inside the route file
+app.use('/api/admin/audit', auditRoutes); // Protected inside the route file
 app.use('/api/admin/revenue', revenueRoutes); // Protected inside the route file
 app.use('/api/admin/profile', profileRoutes); // Protected inside the route file
 app.use('/api/admin/settings', settingsRoutes); // Protected inside the route file
 app.use('/api/admin/notifications', notificationsRoutes); // Protected inside the route file
-app.use('/api/admin/manual-payments', manualPaymentsRoutes); // Will add protection inside the route file if needed
+app.use('/api/admin/manual-payments', manualPaymentsRoutes); // Protected inside the route file
 
 app.use(notFoundHandler);
 app.use(errorHandler);
