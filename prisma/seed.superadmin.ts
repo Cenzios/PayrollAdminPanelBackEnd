@@ -1,54 +1,80 @@
-
 import { PrismaClient, Role } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import path from 'path';
 import dotenv from 'dotenv';
+import { validatePassword } from '../src/utils/validations/passwordValidation';
+
+// Usage: npx ts-node prisma/seed.superadmin.ts
+// Reads SEED_ADMIN_EMAIL / SEED_ADMIN_PASSWORD / SEED_ADMIN_FULLNAME from .env.
+// The password must satisfy the same policy the app enforces on password changes.
 
 const envPath = path.resolve(__dirname, '../.env');
 dotenv.config({ path: envPath });
 
 const prisma = new PrismaClient();
 
-async function createSuperAdmin() {
-    try {
-        const email = process.env.SEED_ADMIN_EMAIL ?? 'admin@payroll.com';
-        const password = process.env.SEED_ADMIN_PASSWORD ?? 'Payroll@123';
-        const fullName = process.env.SEED_ADMIN_FULLNAME ?? 'Super Admin';
+interface SeedAdminConfig {
+    email: string;
+    password: string;
+    fullName: string;
+}
 
-        console.log(`Checking for existing admin with email: ${email}`);
+/** Reads and validates the seed config. Returns null (after logging why) when it is unusable. */
+const readSeedConfig = (): SeedAdminConfig | null => {
+    const email = process.env.SEED_ADMIN_EMAIL?.trim();
+    const password = process.env.SEED_ADMIN_PASSWORD;
+    const fullName = process.env.SEED_ADMIN_FULLNAME?.trim() || 'Super Admin';
+
+    if (!email || !password) {
+        console.error('❌ SEED_ADMIN_EMAIL and SEED_ADMIN_PASSWORD must be set in .env');
+        return null;
+    }
+
+    const policy = validatePassword(password);
+    if (!policy.isValid) {
+        console.error('❌ SEED_ADMIN_PASSWORD does not meet the password policy:');
+        policy.errors.forEach((error) => console.error(`   - ${error}`));
+        console.error('   Set a stronger SEED_ADMIN_PASSWORD in .env and run the seed again.');
+        return null;
+    }
+
+    return { email, password, fullName };
+};
+
+async function createSuperAdmin(): Promise<number> {
+    const config = readSeedConfig();
+    if (!config) return 1;
+
+    try {
+        console.log(`Checking for existing admin with email: ${config.email}`);
 
         const existingUser = await prisma.user.findUnique({
-            where: { email },
+            where: { email: config.email },
         });
 
         if (existingUser) {
             if (existingUser.role === Role.SUPER_ADMIN) {
-                console.log('⚠️  Super admin already exists with this email.');
-                return;
-            } else {
-                console.log('⚠️  User exists but is not a SUPER_ADMIN. Updating role...');
-                // Optional: Upgrade existing user to SUPER_ADMIN? 
-                // For safety, let's just warn and exit, or we can update it. 
-                // Given requirements say "There MUST be NO way to create SUPER_ADMIN from any public API", 
-                // we should probably just fail or manually update via seed.
-                // Let's update the existing user to be SUPER_ADMIN for convenience in dev.
-                await prisma.user.update({
-                    where: { email },
-                    data: { role: Role.SUPER_ADMIN }
-                });
-                console.log('✅ User role updated to SUPER_ADMIN');
-                return;
+                console.log('⚠️  Super admin already exists with this email (password left unchanged).');
+                return 0;
             }
+            // Dev convenience: promote the existing account (there is no public API that can do this)
+            console.log('⚠️  User exists but is not a SUPER_ADMIN. Updating role...');
+            await prisma.user.update({
+                where: { email: config.email },
+                data: { role: Role.SUPER_ADMIN },
+            });
+            console.log('✅ User role updated to SUPER_ADMIN');
+            return 0;
         }
 
         console.log('Creating new Super Admin...');
-        const hashedPassword = await bcrypt.hash(password, 12);
+        const hashedPassword = await bcrypt.hash(config.password, 12);
 
         const admin = await prisma.user.create({
             data: {
-                email,
+                email: config.email,
                 password: hashedPassword,
-                fullName,
+                fullName: config.fullName,
                 role: Role.SUPER_ADMIN,
                 isEmailVerified: true,
                 isPasswordSet: true,
@@ -56,14 +82,17 @@ async function createSuperAdmin() {
         });
 
         console.log('✅ Super admin created successfully with ID:', admin.id);
-        console.log('📧 Email:', email);
-        console.log('🔑 Password:', password);
-        console.log('⚠️  Please change the password after first login');
+        console.log('📧 Email:', config.email);
+        console.log('🔑 Password: the SEED_ADMIN_PASSWORD value from .env');
+        return 0;
     } catch (error) {
         console.error('❌ Error creating super admin:', error);
+        return 1;
     } finally {
         await prisma.$disconnect();
     }
 }
 
-createSuperAdmin();
+createSuperAdmin().then((code) => {
+    process.exitCode = code;
+});
