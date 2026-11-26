@@ -27,6 +27,9 @@ export const getDashboardSummary = async (range: string = 'yearly'): Promise<Das
       _sum: { totalAmount: true }
     }),
     prisma.auditLog.findMany({
+      // Activity feed shows completed actions only; failed/rejected requests (status >= 400,
+      // or no recorded status) stay on the security / audit pages.
+      where: { statusCode: { lt: 400 } },
       take: 10,
       orderBy: { createdAt: 'desc' },
       include: {
