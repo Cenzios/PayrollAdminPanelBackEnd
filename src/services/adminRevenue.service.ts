@@ -2,7 +2,8 @@ import { BillingType, InvoiceStatus, Prisma } from '@prisma/client';
 import prisma from '../config/db';
 import { sendPaymentReminderEmail } from './email.service';
 import { HttpError } from '../utils/httpError';
-import { moneyToString } from '../utils/money';
+import { moneyToString, toDecimal } from '../utils/money';
+import { MANUAL_PAYMENT_GATEWAY } from './manualPaymentApproval.service';
 
 export interface InvoiceFilters {
   status?: InvoiceStatus;
@@ -23,17 +24,18 @@ export class AdminRevenueService {
   async getRevenueSummary(): Promise<RevenueSummaryDto> {
     const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
 
-    const [totalRevenue, onlineRevenue, manualRevenue, monthlyRevenue, overdueCount] = await Promise.all([
+    const [totalRevenue, onlineRevenue, monthlyRevenue, overdueCount] = await Promise.all([
       prisma.invoice.aggregate({
         where: { status: 'PAID' },
         _sum: { totalAmount: true },
       }),
+      // Online = settled by a payment gateway: the linked payment actually SUCCEEDED and it is
+      // not a manual (bank slip) approval. A Stripe intent that was only started does not count.
       prisma.invoice.aggregate({
-        where: { status: 'PAID', paymentIntentId: { not: null } },
-        _sum: { totalAmount: true },
-      }),
-      prisma.invoice.aggregate({
-        where: { status: 'PAID', paymentIntentId: null },
+        where: {
+          status: 'PAID',
+          paymentIntent: { is: { status: 'SUCCEEDED', gateway: { not: MANUAL_PAYMENT_GATEWAY } } },
+        },
         _sum: { totalAmount: true },
       }),
       // Same definition as the dashboard: paid invoices billed for the current month
@@ -44,11 +46,15 @@ export class AdminRevenueService {
       prisma.invoice.count({ where: { status: 'OVERDUE' } }),
     ]);
 
+    // Manual = every other paid invoice (approved bank slips, legacy manual approvals that kept
+    // an unfinished gateway intent, and paid invoices with no gateway payment at all)
+    const manualRevenue = toDecimal(totalRevenue._sum.totalAmount).minus(toDecimal(onlineRevenue._sum.totalAmount));
+
     // Prisma `_sum` returns Decimal | null -> always serialize money as strings
     return {
       totalRevenue: moneyToString(totalRevenue._sum.totalAmount),
       onlineRevenue: moneyToString(onlineRevenue._sum.totalAmount),
-      manualRevenue: moneyToString(manualRevenue._sum.totalAmount),
+      manualRevenue: manualRevenue.toString(),
       overdueCount,
       monthlyRevenue: moneyToString(monthlyRevenue._sum.totalAmount),
     };
