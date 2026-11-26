@@ -1,8 +1,7 @@
-import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
+import prisma from '../config/db';
+import { HttpError } from '../utils/httpError';
 import { validatePassword } from '../utils/validations/passwordValidation';
-
-const prisma = new PrismaClient();
 
 export const getProfile = async (userId: string) => {
     return await prisma.user.findUnique({
@@ -26,7 +25,7 @@ export const updateProfile = async (userId: string, data: { fullName?: string; e
         });
 
         if (existingUser) {
-            throw new Error('Email already in use');
+            throw new HttpError(409, 'Email already in use');
         }
     }
 
@@ -47,36 +46,40 @@ export const updateProfile = async (userId: string, data: { fullName?: string; e
     return updatedUser;
 };
 
-export const changePassword = async (userId: string, data: { currentPassword: string; newPassword: string }) => {
+export const changePassword = async (
+    userId: string,
+    data: { currentPassword: string; newPassword: string },
+    currentSessionId?: string
+): Promise<{ message: string }> => {
     const user = await prisma.user.findUnique({
         where: { id: userId },
     });
 
     if (!user || !user.password) {
-        throw new Error('User not found');
+        throw new HttpError(404, 'User not found');
     }
 
     // Verify current password
     const isMatch = await bcrypt.compare(data.currentPassword, user.password);
     if (!isMatch) {
-        throw new Error('Incorrect current password');
+        throw new HttpError(400, 'Incorrect current password');
     }
 
     // Check 1: Plain text comparison (quick check)
     if (data.currentPassword === data.newPassword) {
-        throw new Error('New password must be different from current password');
+        throw new HttpError(400, 'New password must be different from current password');
     }
 
     // Check 2: Compare with hashed password (extra security)
     const isSameAsCurrent = await bcrypt.compare(data.newPassword, user.password);
     if (isSameAsCurrent) {
-        throw new Error('New password must be different from current password');
+        throw new HttpError(400, 'New password must be different from current password');
     }
 
     // Validate password strength
     const validation = validatePassword(data.newPassword);
     if (!validation.isValid) {
-        throw new Error(validation.errors.join('. '));
+        throw new HttpError(400, validation.errors.join('. '));
     }
 
     // Hash new password with bcrypt cost 12
@@ -87,6 +90,16 @@ export const changePassword = async (userId: string, data: { currentPassword: st
         data: {
             password: hashedPassword,
         },
+    });
+
+    // Revoke every other active login session of this admin
+    await prisma.userLoginSession.updateMany({
+        where: {
+            userId,
+            logoutAt: null,
+            ...(currentSessionId ? { id: { not: currentSessionId } } : {}),
+        },
+        data: { logoutAt: new Date() },
     });
 
     return { message: 'Password updated successfully' };

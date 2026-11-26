@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import * as adminProfileController from '../controllers/adminProfile.controller';
 import { requireSuperAdmin } from '../middlewares/requireSuperAdmin.middleware';
+import { validate } from '../middlewares/validate.middleware';
+import { changePasswordValidators, updateProfileValidators } from '../validators/profile.validators';
 
 const router = Router();
 
@@ -8,8 +10,8 @@ const router = Router();
 router.use(requireSuperAdmin);
 
 router.get('/details', adminProfileController.getProfileDetails);
-router.patch('/update', adminProfileController.updateProfileDetails);
+router.patch('/update', ...updateProfileValidators, validate, adminProfileController.updateProfileDetails);
 
-router.post('/change-password', adminProfileController.updatePassword);
+router.post('/change-password', ...changePasswordValidators, validate, adminProfileController.updatePassword);
 
 export default router;

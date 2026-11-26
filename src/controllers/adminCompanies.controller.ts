@@ -1,7 +1,7 @@
-import { Request, Response } from 'express';
+import { Request, Response, NextFunction } from 'express';
 import adminCompaniesService from '../services/adminCompanies.service';
 
-export const getAllCompanies = async (req: Request, res: Response) => {
+export const getAllCompanies = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
         const page = parseInt(req.query.page as string) || 1;
         const limit = parseInt(req.query.limit as string) || 10;
@@ -11,12 +11,10 @@ export const getAllCompanies = async (req: Request, res: Response) => {
 
         res.status(200).json({
             success: true,
+            message: 'Companies fetched successfully',
             data,
         });
-    } catch (error: any) {
-        res.status(500).json({
-            success: false,
-            message: error.message || 'Error fetching companies',
-        });
+    } catch (error) {
+        next(error);
     }
 };

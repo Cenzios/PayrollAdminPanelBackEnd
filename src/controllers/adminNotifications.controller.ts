@@ -1,26 +1,17 @@
-import { Request, Response } from 'express';
+import { Request, Response, NextFunction } from 'express';
 import adminNotificationsService from '../services/adminNotifications.service';
 
-export const sendNotification = async (req: Request, res: Response) => {
+export const sendNotification = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-        const { userId, title, message } = req.body;
-
-        if (!userId || !title || !message) {
-            return res.status(400).json({
-                success: false,
-                error: 'userId, title, and message are required'
-            });
-        }
+        const { userId, title, message } = req.body as { userId: string; title: string; message: string };
 
         const notification = await adminNotificationsService.sendNotification(userId, title, message);
-        return res.status(201).json({
+        res.status(201).json({
             success: true,
-            data: notification
+            message: 'Notification sent successfully',
+            data: notification,
         });
-    } catch (error: any) {
-        return res.status(500).json({
-            success: false,
-            error: error.message || 'Failed to send notification'
-        });
+    } catch (error) {
+        next(error);
     }
 };

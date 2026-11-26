@@ -14,6 +14,7 @@ export const getLoginSessions = async (
 
     res.status(200).json({
       success: true,
+      message: 'Login sessions fetched successfully',
       data: result,
     });
   } catch (error) {
@@ -31,6 +32,7 @@ export const getSuspiciousActivity = async (
 
     res.status(200).json({
       success: true,
+      message: 'Suspicious activity fetched successfully',
       data: result,
     });
   } catch (error) {
