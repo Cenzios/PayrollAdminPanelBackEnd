@@ -2,16 +2,42 @@ import { Request, Response, NextFunction } from 'express';
 import { DocumentStatus } from '@prisma/client';
 import prisma from '../config/db';
 import { sendPaymentConfirmationEmail, sendPaymentRejectionEmail } from '../services/email.service';
+import {
+    approveManualPayment,
+    claimPendingDocument,
+    findTargetInvoice,
+} from '../services/manualPaymentApproval.service';
 import { HttpError } from '../utils/httpError';
-import { toDecimal } from '../utils/money';
+import { moneyToString } from '../utils/money';
+
+const isDocumentStatus = (value: unknown): value is DocumentStatus =>
+    typeof value === 'string' && (Object.values(DocumentStatus) as string[]).includes(value);
+
+interface TargetInvoiceDto {
+    id: string;
+    billingType: string;
+    billingMonth: string;
+    totalAmount: string;
+    status: string;
+}
+
+/** For pending proofs: the invoice an approval would settle (so the admin can check the slip amount). */
+const _targetInvoiceFor = async (userId: string): Promise<TargetInvoiceDto | null> => {
+    const invoice = await findTargetInvoice(prisma, userId);
+    if (!invoice) return null;
+    return {
+        id: invoice.id,
+        billingType: invoice.billingType,
+        billingMonth: invoice.billingMonth,
+        totalAmount: moneyToString(invoice.totalAmount),
+        status: invoice.status,
+    };
+};
 
 // Get manual payment proofs by status (defaults to PENDING)
-export const getPendingPayments = async (req: Request, res: Response): Promise<void> => {
+export const getPendingPayments = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-        const { status } = req.query;
-        const docStatus = status && Object.values(DocumentStatus).includes(status as any)
-            ? status as DocumentStatus
-            : DocumentStatus.PENDING;
+        const docStatus = isDocumentStatus(req.query.status) ? req.query.status : DocumentStatus.PENDING;
 
         const documents = await prisma.userDocument.findMany({
             where: { status: docStatus },
@@ -27,230 +53,56 @@ export const getPendingPayments = async (req: Request, res: Response): Promise<v
             orderBy: { createdAt: 'desc' },
         });
 
+        const data = docStatus === DocumentStatus.PENDING
+            ? await Promise.all(documents.map(async (doc) => ({ ...doc, targetInvoice: await _targetInvoiceFor(doc.userId) })))
+            : documents;
+
         res.status(200).json({
             success: true,
             message: 'Payments fetched successfully',
-            data: documents,
-        });
-    } catch (error) {
-        console.error('Error fetching pending payments:', error);
-        res.status(500).json({ success: false, message: 'Server error while fetching pending payments' });
-    }
-};
-
-// Approve a manual payment proof
-export const approvePayment = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-    const { id } = req.params;
-    try {
-        const result = await prisma.$transaction(async (tx) => {
-            const doc = await tx.userDocument.findUnique({
-                where: { id },
-                include: { user: true }
-            });
-            if (!doc) throw new HttpError(404, 'Payment document not found');
-            if (doc.status === DocumentStatus.APPROVED) {
-                throw new HttpError(409, 'Payment has already been approved');
-            }
-
-            const targetUserId = doc.userId;
-            const userEmail = doc.user.email;
-            const fullName = doc.user.fullName;
-
-            // 1. Mark document as APPROVED
-            const updatedDoc = await tx.userDocument.update({
-                where: { id },
-                data: { status: DocumentStatus.APPROVED },
-            });
-
-            // 2. Cancel any existing active subscription
-            const currentActive = await tx.subscription.findFirst({
-                where: { userId: targetUserId, status: 'ACTIVE' },
-            });
-            if (currentActive) {
-                await tx.subscription.update({
-                    where: { id: currentActive.id },
-                    data: {
-                        status: 'CANCELLED',
-                        endDate: new Date(),
-                    },
-                });
-            }
-
-            // 3. Activate the pending paid subscription
-            const pendingSub = await tx.subscription.findFirst({
-                where: { userId: targetUserId, status: 'PENDING_ACTIVATION' },
-                include: { plan: true },
-            });
-
-            if (pendingSub) {
-                // ✅ SCENARIO A: New signup — activate PENDING_ACTIVATION subscription
-                await tx.subscription.update({
-                    where: { id: pendingSub.id },
-                    data: {
-                        status: 'ACTIVE',
-                        activatedAt: new Date(),
-                        startDate: new Date(),
-                        endDate: new Date(new Date().setMonth(new Date().getMonth() + 1)),
-                    },
-                });
-
-                const plan = pendingSub.plan;
-
-                // Mark any pre-existing PENDING/OVERDUE invoices for this subscription as PAID
-                // (avoids duplicates if selectPlan already created an invoice)
-                const existingInvoice = await tx.invoice.findFirst({
-                    where: {
-                        subscriptionId: pendingSub.id,
-                        billingType: 'REGISTRATION',
-                        status: { in: ['PENDING', 'OVERDUE'] },
-                    },
-                });
-
-                if (existingInvoice) {
-                    await tx.invoice.update({
-                        where: { id: existingInvoice.id },
-                        data: { status: 'PAID', paidAt: new Date() },
-                    });
-                    console.log(`🧾 [MANUAL APPROVAL] Existing REGISTRATION invoice ${existingInvoice.id} marked as PAID`);
-                } else {
-                    // Calculate current active employee count for the user's companies
-                    const currentEmployeeCount = await tx.employee.count({
-                        where: {
-                            company: { ownerId: targetUserId },
-                            deletedAt: null,
-                        },
-                    });
-
-                    // Create the Initial "Registration" Invoice
-                    await tx.invoice.create({
-                        data: {
-                            userId: targetUserId,
-                            subscriptionId: pendingSub.id,
-                            planId: plan.id,
-                            billingType: 'REGISTRATION',
-                            billingMonth: new Date().toISOString().slice(0, 7),
-                            employeeCount: currentEmployeeCount,
-                            pricePerEmployee: plan.employeePrice,
-                            registrationFee: plan.registrationFee,
-                            // Exact decimal arithmetic: registrationFee + employees x employeePrice
-                            totalAmount: toDecimal(plan.registrationFee)
-                                .plus(toDecimal(plan.employeePrice).times(currentEmployeeCount))
-                                .toString(),
-                            status: 'PAID',
-                            paidAt: new Date(),
-                            dueDate: new Date(),
-                            billingPeriodStart: new Date(),
-                            billingPeriodEnd: new Date(new Date().setMonth(new Date().getMonth() + 1)),
-                            planNameSnapshot: plan.name,
-                        },
-                    });
-                }
-            } else {
-                // ✅ SCENARIO B: Renewal of a CANCELLED plan — re-activate it
-                const cancelledSub = await tx.subscription.findFirst({
-                    where: { userId: targetUserId, status: 'CANCELLED' },
-                    include: { plan: true },
-                    orderBy: { createdAt: 'desc' },
-                });
-
-                if (cancelledSub) {
-                    console.log(`🔄 [MANUAL APPROVAL] Re-activating CANCELLED subscription ${cancelledSub.id} for user ${targetUserId}`);
-
-                    const newEndDate = new Date();
-                    newEndDate.setMonth(newEndDate.getMonth() + 1);
-
-                    await tx.subscription.update({
-                        where: { id: cancelledSub.id },
-                        data: {
-                            status: 'ACTIVE',
-                            activatedAt: new Date(),
-                            startDate: new Date(),
-                            endDate: newEndDate,
-                        },
-                    });
-
-                    // Mark ALL pending/overdue/failed invoices for this subscription as PAID
-                    const subInvoices = await tx.invoice.findMany({
-                        where: {
-                            subscriptionId: cancelledSub.id,
-                            status: { in: ['PENDING', 'OVERDUE', 'FAILED'] },
-                        },
-                    });
-
-                    for (const inv of subInvoices) {
-                        await tx.invoice.update({
-                            where: { id: inv.id },
-                            data: { status: 'PAID', paidAt: new Date() },
-                        });
-                        console.log(`🧾 [MANUAL APPROVAL] Invoice ${inv.id} (${inv.billingType}) marked as PAID`);
-                    }
-
-                    // Also catch any user-level pending invoices not linked to a specific subscription
-                    if (subInvoices.length === 0) {
-                        const userInvoices = await tx.invoice.findMany({
-                            where: {
-                                userId: targetUserId,
-                                status: { in: ['PENDING', 'OVERDUE', 'FAILED'] },
-                            },
-                        });
-                        for (const inv of userInvoices) {
-                            await tx.invoice.update({
-                                where: { id: inv.id },
-                                data: { status: 'PAID', paidAt: new Date() },
-                            });
-                            console.log(`🧾 [MANUAL APPROVAL] User-level invoice ${inv.id} (${inv.billingType}) marked as PAID`);
-                        }
-                    }
-                } else {
-                    console.warn(`⚠️ [MANUAL APPROVAL] No PENDING_ACTIVATION or CANCELLED subscription found for user ${targetUserId}.`);
-                }
-            }
-
-            // 4. Mark user as paid (remove trial restrictions)
-            await tx.user.update({
-                where: { id: targetUserId },
-                data: { isTrialUser: false },
-            });
-
-            return { updatedDoc, userEmail, fullName };
-        }, {
-            maxWait: 15000,
-            timeout: 25000
-        });
-
-        // Send confirmation email
-        sendPaymentConfirmationEmail(result.userEmail, result.fullName).catch(err => {
-            console.error('Failed to send confirmation email after approval:', err);
-        });
-
-        res.status(200).json({
-            success: true,
-            message: 'Payment approved successfully and confirmation email sent',
-            data: result.updatedDoc,
+            data,
         });
     } catch (error) {
         next(error);
     }
 };
 
-// Reject a manual payment proof
-export const rejectPayment = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-    const { id } = req.params;
+// Approve a manual payment proof: settles exactly one invoice (see manualPaymentApproval.service)
+export const approvePayment = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-        const document = await prisma.userDocument.update({
-            where: { id },
-            data: { status: DocumentStatus.REJECTED },
-            include: {
-                user: {
-                    select: {
-                        fullName: true,
-                        email: true,
-                    },
-                },
-            },
+        const { amount } = req.body as { amount?: string | number };
+        const adminId = req.user?.id;
+        if (!adminId) throw new HttpError(401, 'Session expired. Please log in again.');
+
+        const { user, message, ...result } = await approveManualPayment({
+            documentId: req.params.id,
+            adminId,
+            amount: amount === undefined || amount === null ? undefined : String(amount).trim(),
         });
 
-        sendPaymentRejectionEmail(document.user.email, document.user.fullName).catch(err => {
+        sendPaymentConfirmationEmail(user.email, user.fullName).catch((err: unknown) => {
+            console.error('Failed to send confirmation email after approval:', err);
+        });
+
+        res.status(200).json({ success: true, message, data: result });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// Reject a manual payment proof (PENDING only; anything else is 409 and sends no email)
+export const rejectPayment = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+        const { id } = req.params;
+        const document = await prisma.$transaction(async (tx) => {
+            await claimPendingDocument(tx, id, DocumentStatus.REJECTED);
+            return tx.userDocument.findUniqueOrThrow({
+                where: { id },
+                include: { user: { select: { fullName: true, email: true } } },
+            });
+        });
+
+        sendPaymentRejectionEmail(document.user.email, document.user.fullName).catch((err: unknown) => {
             console.error('Failed to send rejection email after payment rejection:', err);
         });
 
