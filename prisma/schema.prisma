@@ -349,6 +349,7 @@ model UserLoginSession {
   loginAt      DateTime   @default(now()) @map("login_at")
   logoutAt     DateTime?  @map("logout_at")
   isSuspicious Boolean    @default(false) @map("is_suspicious")
+  refreshJti   String?    @map("refresh_jti") @db.VarChar(64)
   createdAt    DateTime   @default(now()) @map("created_at")
   auditLogs    AuditLog[]
   user         User       @relation(fields: [userId], references: [id])
