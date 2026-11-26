@@ -473,10 +473,12 @@ model UserDocument {
   fileUrl     String         @map("file_url")
   status      DocumentStatus @default(PENDING)
   referenceId String?        @map("reference_id")
+  invoiceId   String?        @map("invoice_id")
   createdAt   DateTime       @default(now()) @map("created_at")
   user        User           @relation(fields: [userId], references: [id])
 
   @@index([userId], map: "user_document_user_id_fkey")
+  @@index([invoiceId], map: "user_document_invoice_id_idx")
   @@map("user_document")
 }
 
