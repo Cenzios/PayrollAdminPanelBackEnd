@@ -16,8 +16,36 @@ interface DashboardSummaryDto {
   monthlyRevenue: string;
   totalIncome: string;
   recentActivities: { id: string; action: string; userName: string; createdAt: Date; resourceType: string | null; endpoint: string }[];
-  chartData: { month: string; value: number }[];
+  /** Chart for the requested `range` (kept for backward compatibility). */
+  chartData: ChartPoint[];
+  /** Chart for every range, so the panel needs a single summary request. */
+  chartDataByRange: Record<ChartRange, ChartPoint[]>;
 }
+
+interface ChartPoint {
+  month: string;
+  value: number;
+}
+
+type ChartRange = 'monthly' | '3months' | '6months' | 'yearly';
+
+const RANGE_MONTHS: Record<ChartRange, number> = { monthly: 2, '3months': 3, '6months': 6, yearly: 12 };
+
+const isChartRange = (value: string): value is ChartRange => value in RANGE_MONTHS;
+
+/** Registrations of USER accounts per calendar month, oldest first, for the last `months` months. */
+const _getMonthlyRegistrations = async (months: number): Promise<ChartPoint[]> => {
+  const now = new Date();
+  const monthStarts = Array.from({ length: months + 1 }, (_, i) =>
+    new Date(now.getFullYear(), now.getMonth() - months + 1 + i, 1));
+
+  return Promise.all(monthStarts.slice(0, months).map(async (start, i): Promise<ChartPoint> => {
+    const value = await prisma.user.count({
+      where: { role: 'USER', createdAt: { gte: start, lt: monthStarts[i + 1] } },
+    });
+    return { month: start.toLocaleString('default', { month: 'short' }), value };
+  }));
+};
 
 export const getDashboardSummary = async (range: string = 'yearly'): Promise<DashboardSummaryDto> => {
   const [
@@ -27,7 +55,8 @@ export const getDashboardSummary = async (range: string = 'yearly'): Promise<Das
     totalIncomesData,
     recentLogs
   ] = await Promise.all([
-    prisma.user.count({ where: { role: 'USER' } }),
+    // Active users: customer accounts that are not suspended by an admin
+    prisma.user.count({ where: { role: 'USER', status: 'ACTIVE' } }),
     prisma.company.count(),
     prisma.employee.count({ where: { status: 'ACTIVE', deletedAt: null } }),
     prisma.invoice.aggregate({
@@ -79,32 +108,16 @@ export const getDashboardSummary = async (range: string = 'yearly'): Promise<Das
     endpoint: log.endpoint.split('?')[0],
   }));
 
-  // Calculate Chart Data (Monthly User Registrations for last X months)
-  let monthsToFetch = 12; // default yearly
-  if (range === 'monthly') monthsToFetch = 2;
-  else if (range === '3months') monthsToFetch = 3;
-  else if (range === '6months') monthsToFetch = 6;
-  else if (range === 'yearly') monthsToFetch = 12;
-
-  const chartData = [];
-  for (let i = monthsToFetch - 1; i >= 0; i--) {
-    const d = new Date();
-    d.setMonth(d.getMonth() - i);
-    const monthName = d.toLocaleString('default', { month: 'short' });
-    const yearMonth = d.toISOString().slice(0, 7);
-
-    const count = await prisma.user.count({
-      where: {
-        role: 'USER',
-        createdAt: {
-          gte: new Date(yearMonth + '-01'),
-          lt: new Date(new Date(yearMonth + '-01').setMonth(new Date(yearMonth + '-01').getMonth() + 1))
-        }
-      }
-    });
-
-    chartData.push({ month: monthName, value: count });
-  }
+  // User registrations per month for the last 12 months; every range is a suffix of it,
+  // so one request serves all chart ranges (the panel switches ranges without refetching).
+  const yearly = await _getMonthlyRegistrations(12);
+  const chartDataByRange: Record<ChartRange, ChartPoint[]> = {
+    monthly: yearly.slice(-RANGE_MONTHS.monthly),
+    '3months': yearly.slice(-RANGE_MONTHS['3months']),
+    '6months': yearly.slice(-RANGE_MONTHS['6months']),
+    yearly,
+  };
+  const chartData = chartDataByRange[isChartRange(range) ? range : 'yearly'];
 
   return {
     activeUsers,
@@ -113,6 +126,7 @@ export const getDashboardSummary = async (range: string = 'yearly'): Promise<Das
     monthlyRevenue,
     totalIncome,
     recentActivities,
-    chartData
+    chartData,
+    chartDataByRange,
   };
 };
