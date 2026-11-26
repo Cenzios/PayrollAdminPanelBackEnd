@@ -45,21 +45,21 @@ const deliver = async (mailOptions: nodemailer.SendMailOptions): Promise<EmailRe
 
 export const sendPaymentConfirmationEmail = async (userEmail: string, fullName: string): Promise<EmailResult> => {
     const mailOptions = {
-        from: `"CenzHRM" <${process.env.EMAIL_FROM}>`,
+        from: `"CenzPayroll" <${process.env.EMAIL_FROM}>`,
         to: userEmail,
-        subject: 'Payment Confirmed - Welcome to CenzHRM',
+        subject: 'Payment Confirmed - Welcome to CenzPayroll',
         html: `
             // <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; padding: 20px; border-radius: 8px;">
                 <h2 style="color: #2c3e50;">Payment Confirmation</h2>
                 <p>Dear ${escapeHtml(fullName)},</p>
                 <p>We are pleased to inform you that your manual payment has been successfully approved.</p>
-                <p>Your subscription is now active, and you have full access to all features of CenzHRM.</p>
+                <p>Your subscription is now active, and you have full access to all features of CenzPayroll.</p>
                 <p><strong>You can now log in to your dashboard:</strong></p>
                 <p><a href="https://payroll.dev.cenzios.com/login" style="display: inline-block; padding: 10px 20px; background-color: #3498db; color: #fff; text-decoration: none; border-radius: 5px;">Login to Dashboard</a></p>
-                <p>Thank you for choosing CenzHRM!</p>
+                <p>Thank you for choosing CenzPayroll!</p>
                 <br>
-                <p>Best regards,<br>Team CenzHRM</p>
+                <p>Best regards,<br>Team CenzPayroll</p>
             </div>
         `,
     };
@@ -69,9 +69,9 @@ export const sendPaymentConfirmationEmail = async (userEmail: string, fullName: 
 
 export const sendPaymentRejectionEmail = async (userEmail: string, fullName: string): Promise<EmailResult> => {
     const mailOptions = {
-        from: `"CenzHRM" <${process.env.EMAIL_FROM}>`,
+        from: `"CenzPayroll" <${process.env.EMAIL_FROM}>`,
         to: userEmail,
-        subject: 'Payment Rejected - Action Required for CenzHRM',
+        subject: 'Payment Rejected - Action Required for CenzPayroll',
         html: `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; padding: 20px; border-radius: 8px;">
                 <h2 style="color: #c0392b;">Payment Rejected</h2>
@@ -81,7 +81,7 @@ export const sendPaymentRejectionEmail = async (userEmail: string, fullName: str
                 <p><a href="https://payroll.dev.cenzios.com/login" style="display: inline-block; padding: 10px 20px; background-color: #3498db; color: #fff; text-decoration: none; border-radius: 5px;">Resubmit Bank Slip</a></p>
                 <p>For any assistance, please contact our support team.</p>
                 <br>
-                <p>Best regards,<br>Team CenzHRM</p>
+                <p>Best regards,<br>Team CenzPayroll</p>
             </div>
         `,
     };
@@ -96,7 +96,7 @@ export const sendPaymentReminderEmail = async (
     amount: string
 ): Promise<EmailResult> => {
     const mailOptions = {
-        from: `"CenzHRM" <${process.env.EMAIL_FROM}>`,
+        from: `"CenzPayroll" <${process.env.EMAIL_FROM}>`,
         to: userEmail,
         subject: `Payment Reminder - ${billingMonth} Invoice Overdue`,
         html: `
@@ -108,7 +108,7 @@ export const sendPaymentReminderEmail = async (
                 <p><a href="https://payroll.dev.cenzios.com/login" style="display: inline-block; padding: 10px 20px; background-color: #3498db; color: #fff; text-decoration: none; border-radius: 5px;">Pay Now</a></p>
                 <p>If you've already made this payment, please disregard this notice.</p>
                 <br>
-                <p>Best regards,<br>Team CenzHRM</p>
+                <p>Best regards,<br>Team CenzPayroll</p>
             </div>
         `,
     };
