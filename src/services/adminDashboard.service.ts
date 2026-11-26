@@ -1,5 +1,13 @@
+import { Prisma } from '@prisma/client';
 import prisma from '../config/db';
 import { moneyToString, sumMoney } from '../utils/money';
+
+/** Customer-API auth calls that are not user actions (hidden from the activity feed). */
+const AUTH_NOISE_FILTERS: Prisma.AuditLogWhereInput[] = [
+  { endpoint: { startsWith: '/api/v1/auth/refresh' } },
+  { endpoint: { startsWith: '/api/v1/auth/check-lock-status' } },
+  { endpoint: { startsWith: '/api/v1/auth/' }, userId: null },
+];
 
 interface DashboardSummaryDto {
   activeUsers: number;
@@ -7,7 +15,7 @@ interface DashboardSummaryDto {
   totalEmployees: number;
   monthlyRevenue: string;
   totalIncome: string;
-  recentActivities: { id: string; action: string; userName: string; createdAt: Date; resourceType: string | null }[];
+  recentActivities: { id: string; action: string; userName: string; createdAt: Date; resourceType: string | null; endpoint: string }[];
   chartData: { month: string; value: number }[];
 }
 
@@ -27,9 +35,11 @@ export const getDashboardSummary = async (range: string = 'yearly'): Promise<Das
       _sum: { totalAmount: true }
     }),
     prisma.auditLog.findMany({
-      // Activity feed shows completed actions only; failed/rejected requests (status >= 400,
-      // or no recorded status) stay on the security / audit pages.
-      where: { statusCode: { lt: 400 } },
+      // Activity feed shows completed, meaningful actions only. Failed/rejected requests
+      // (status >= 400, or no recorded status) stay on the security / audit pages, and
+      // customer auth housekeeping (token refresh, lock-status checks, anonymous auth calls)
+      // is noise that would otherwise show up as "Created Auth by System".
+      where: { statusCode: { lt: 400 }, NOT: AUTH_NOISE_FILTERS },
       take: 10,
       orderBy: { createdAt: 'desc' },
       include: {
@@ -65,7 +75,8 @@ export const getDashboardSummary = async (range: string = 'yearly'): Promise<Das
     action: log.action,
     userName: log.user?.fullName || 'System',
     createdAt: log.createdAt,
-    resourceType: log.resourceType
+    resourceType: log.resourceType,
+    endpoint: log.endpoint.split('?')[0],
   }));
 
   // Calculate Chart Data (Monthly User Registrations for last X months)

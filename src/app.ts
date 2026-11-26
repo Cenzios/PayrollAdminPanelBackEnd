@@ -22,6 +22,7 @@ import settingsRoutes from './routes/admin.settings.routes';
 import notificationsRoutes from './routes/admin.notifications.routes';
 import manualPaymentsRoutes from './routes/admin.manualpayments.routes';
 import { requireSuperAdmin } from './middlewares/requireSuperAdmin.middleware';
+import { auditAdminMutations } from './middlewares/audit.middleware';
 
 const app: Application = express();
 
@@ -71,8 +72,9 @@ app.use(express.json({ limit: '1mb' }));
 app.use(cookieParser());
 app.use(express.urlencoded({ extended: true }));
 
-// Every /api/admin/* route requires a SUPER_ADMIN session (route files also guard their own routes)
-app.use('/api/admin', limiter, requireSuperAdmin);
+// Every /api/admin/* route requires a SUPER_ADMIN session (route files also guard their own routes).
+// Every admin mutation (POST/PUT/PATCH/DELETE) is then written to audit_log with the admin and status.
+app.use('/api/admin', limiter, requireSuperAdmin, auditAdminMutations);
 
 app.get('/health', (_req, res) => {
   res.status(200).json({
