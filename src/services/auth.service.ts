@@ -5,6 +5,9 @@ import jwt, { SignOptions } from 'jsonwebtoken';
 import prisma from '../config/db';
 import { jwtConfig } from '../config/jwt';
 import { HttpError } from '../utils/httpError';
+import { LOCK_MINUTES, MAX_FAILED_LOGINS } from '../config/authPolicy';
+import { _recordLoginFailure, _resetLoginFailures, isLoginLocked } from './loginLockout.service';
+import { rotateRefreshToken } from './refreshRotation.service';
 import {
     AccessTokenPayload,
     IssuedTokens,
@@ -13,10 +16,6 @@ import {
 } from '../types/auth';
 
 const SESSION_REVOKED_MESSAGE = 'Session expired. Please log in again.';
-
-const isUserBlocked = (user: Pick<User, 'status' | 'lockoutUntil'>): boolean => {
-    return user.status === UserStatus.SUSPENDED || (user.lockoutUntil !== null && user.lockoutUntil > new Date());
-};
 
 const truncate = (value: string, max: number): string => value.slice(0, max);
 
@@ -80,42 +79,21 @@ const issueTokens = (user: Pick<User, 'id' | 'email' | 'fullName' | 'role'>, sid
 };
 
 /**
- * Customer-account lockout policy. Must match Payroll-backEnd/src/services/auth.service.ts (login):
- * 3 failed attempts lock the account for 3 hours.
+ * Every failed login answers exactly this (401), including while the account is locked, so the
+ * endpoint reveals neither whether an account exists nor whether it is locked.
  */
-const MAX_FAILED_LOGIN_ATTEMPTS = 3;
-const LOCKOUT_DURATION_MS = 3 * 60 * 60 * 1000;
-const INVALID_CREDENTIALS = 'Invalid credentials';
+const INVALID_CREDENTIALS = `Invalid credentials. After ${MAX_FAILED_LOGINS} failed attempts an account is locked for ${LOCK_MINUTES} minutes.`;
 
 /** bcrypt hash of a random value; compared against when the account does not exist (equal timing). */
 const DUMMY_HASH: Promise<string> = bcrypt.hash(randomUUID(), 12);
 
 /**
- * A failed admin-panel login against a customer account counts toward that account's
- * lockout exactly like a failed customer login (same fields, same thresholds).
- */
-const _recordCustomerLoginFailure = async (userId: string): Promise<void> => {
-    try {
-        const updated = await prisma.user.update({
-            where: { id: userId },
-            data: { failedLoginAttempts: { increment: 1 }, lastFailedLogin: new Date() },
-            select: { failedLoginAttempts: true },
-        });
-        if (updated.failedLoginAttempts >= MAX_FAILED_LOGIN_ATTEMPTS) {
-            await prisma.user.update({
-                where: { id: userId },
-                data: { lockoutUntil: new Date(Date.now() + LOCKOUT_DURATION_MS) },
-            });
-        }
-    } catch (error) {
-        console.error('Failed to record failed login attempt:', error);
-    }
-};
-
-/**
- * Admin login. Every failure (unknown email, wrong password, non-admin account, blocked
- * account) answers the same "Invalid credentials", so this endpoint cannot be used to test
- * customer passwords. Wrong passwords for customer accounts count toward their lockout.
+ * Admin login. Every failure (unknown email, wrong password, non-admin account, suspended or
+ * locked account) answers the same 401, so this endpoint cannot test customer passwords.
+ * Lockout (admin and customer accounts alike): MAX_FAILED_LOGINS consecutive wrong passwords lock
+ * the account for LOCK_MINUTES. While locked the password is still checked (same timing) but the
+ * result is ignored and the attempt is not counted. The limit is per account, so it does not
+ * depend on the client IP (a spoofed X-Forwarded-For changes nothing).
  */
 export const loginAdmin = async (email: string, password: string, meta: SessionMeta): Promise<IssuedTokens> => {
     const user = await prisma.user.findUnique({
@@ -127,21 +105,25 @@ export const loginAdmin = async (email: string, password: string, meta: SessionM
         throw new HttpError(401, INVALID_CREDENTIALS);
     }
 
-    const isCustomer = user.role !== Role.SUPER_ADMIN;
-    const isLockedOut = user.lockoutUntil !== null && user.lockoutUntil > new Date();
+    const isLocked = isLoginLocked(user);
     const isPasswordValid = await bcrypt.compare(password, user.password);
 
+    if (isLocked) {
+        throw new HttpError(401, INVALID_CREDENTIALS);
+    }
+
     if (!isPasswordValid) {
-        // Locked customer accounts are not counted further (same as the customer API)
-        if (isCustomer && !isLockedOut && user.status !== UserStatus.SUSPENDED) {
-            await _recordCustomerLoginFailure(user.id);
+        if (user.status !== UserStatus.SUSPENDED) {
+            await _recordLoginFailure(user);
         }
         throw new HttpError(401, INVALID_CREDENTIALS);
     }
 
-    if (isCustomer || isUserBlocked(user)) {
+    if (user.role !== Role.SUPER_ADMIN || user.status === UserStatus.SUSPENDED) {
         throw new HttpError(401, INVALID_CREDENTIALS);
     }
+
+    await _resetLoginFailures(user);
 
     const refreshJti = randomUUID();
     const session = await prisma.userLoginSession.create({
@@ -165,34 +147,32 @@ export const refreshAdminSession = async (refreshToken: string | undefined): Pro
 
     const session = await prisma.userLoginSession.findUnique({
         where: { id: payload.sid },
-        include: { user: true },
+        select: {
+            id: true,
+            userId: true,
+            logoutAt: true,
+            user: { select: { id: true, email: true, fullName: true, role: true, status: true } },
+        },
     });
 
     if (!session || session.userId !== payload.userId || session.logoutAt !== null) {
         throw new HttpError(401, SESSION_REVOKED_MESSAGE);
     }
 
-    if (session.user.role !== Role.SUPER_ADMIN || isUserBlocked(session.user)) {
+    // A failed-login lock does not end live sessions (otherwise anyone could log an admin out
+    // with a few wrong passwords); suspension does.
+    if (session.user.role !== Role.SUPER_ADMIN || session.user.status === UserStatus.SUSPENDED) {
         await revokeSession(session.id);
         throw new HttpError(401, SESSION_REVOKED_MESSAGE);
     }
 
-    // Single-use rotation: only the session's current jti may be exchanged, and only once.
-    // The compare-and-set makes concurrent use of the same token fail for all but one caller.
-    const nextJti = randomUUID();
-    const rotated = await prisma.userLoginSession.updateMany({
-        where: { id: session.id, logoutAt: null, refreshJti: payload.jti },
-        data: { refreshJti: nextJti },
-    });
-
-    if (rotated.count !== 1) {
-        // An already-used (or never issued) refresh token: treat as theft, revoke the whole session
-        console.warn(`Refresh token reuse detected for session ${session.id}; session revoked`);
-        await revokeSession(session.id);
+    // Single-use rotation with a 30 s grace window for parallel use of the same cookie
+    const rotation = await rotateRefreshToken(session.id, payload.jti);
+    if (rotation.outcome !== 'rotated') {
         throw new HttpError(401, SESSION_REVOKED_MESSAGE);
     }
 
-    return issueTokens(session.user, session.id, nextJti);
+    return issueTokens(session.user, session.id, rotation.jti);
 };
 
 /** Revokes a session by id. Idempotent. */

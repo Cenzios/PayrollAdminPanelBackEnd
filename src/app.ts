@@ -23,12 +23,13 @@ import notificationsRoutes from './routes/admin.notifications.routes';
 import manualPaymentsRoutes from './routes/admin.manualpayments.routes';
 import { requireSuperAdmin } from './middlewares/requireSuperAdmin.middleware';
 import { auditAdminMutations } from './middlewares/audit.middleware';
+import { parseTrustProxy } from './config/trustProxy';
 
 const app: Application = express();
 
-// Behind one reverse proxy / load balancer: req.ip is the real client IP (X-Forwarded-For),
-// so rate limits are per client instead of shared by everyone behind the proxy.
-app.set('trust proxy', 1);
+// Which proxies may set X-Forwarded-For (TRUST_PROXY; default false = ignore the header).
+// Rate limiters key on req.ip, so a direct client can no longer pick its own key with a fake header.
+app.set('trust proxy', parseTrustProxy(process.env.TRUST_PROXY));
 
 // Coarse abuse guard only: normal admin use (dashboards, searches, modals) never gets near it.
 // Login brute-force protection is the stricter limiter in routes/auth.routes.ts.

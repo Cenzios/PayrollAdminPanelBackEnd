@@ -62,7 +62,7 @@ export const requireSuperAdmin = async (
             select: {
                 userId: true,
                 logoutAt: true,
-                user: { select: { role: true, status: true, lockoutUntil: true } },
+                user: { select: { role: true, status: true } },
             },
         });
 
@@ -70,8 +70,8 @@ export const requireSuperAdmin = async (
             && session.userId === decoded.id
             && session.logoutAt === null
             && session.user.role === Role.SUPER_ADMIN
-            && session.user.status !== UserStatus.SUSPENDED
-            && (session.user.lockoutUntil === null || session.user.lockoutUntil <= new Date());
+            // A failed-login lock blocks new logins only; it does not end live sessions
+            && session.user.status !== UserStatus.SUSPENDED;
 
         if (!isSessionValid) {
             unauthorized(res, 'Session expired. Please log in again.');
