@@ -1,11 +1,12 @@
-import { Request, Response } from 'express';
-import { PrismaClient, DocumentStatus } from '@prisma/client';
+import { Request, Response, NextFunction } from 'express';
+import { DocumentStatus } from '@prisma/client';
+import prisma from '../config/db';
 import { sendPaymentConfirmationEmail, sendPaymentRejectionEmail } from '../services/email.service';
-
-const prisma = new PrismaClient();
+import { HttpError } from '../utils/httpError';
+import { toDecimal } from '../utils/money';
 
 // Get manual payment proofs by status (defaults to PENDING)
-export const getPendingPayments = async (req: Request, res: Response) => {
+export const getPendingPayments = async (req: Request, res: Response): Promise<void> => {
     try {
         const { status } = req.query;
         const docStatus = status && Object.values(DocumentStatus).includes(status as any)
@@ -28,6 +29,7 @@ export const getPendingPayments = async (req: Request, res: Response) => {
 
         res.status(200).json({
             success: true,
+            message: 'Payments fetched successfully',
             data: documents,
         });
     } catch (error) {
@@ -37,7 +39,7 @@ export const getPendingPayments = async (req: Request, res: Response) => {
 };
 
 // Approve a manual payment proof
-export const approvePayment = async (req: Request, res: Response) => {
+export const approvePayment = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const { id } = req.params;
     try {
         const result = await prisma.$transaction(async (tx) => {
@@ -45,7 +47,10 @@ export const approvePayment = async (req: Request, res: Response) => {
                 where: { id },
                 include: { user: true }
             });
-            if (!doc) throw new Error('Document not found');
+            if (!doc) throw new HttpError(404, 'Payment document not found');
+            if (doc.status === DocumentStatus.APPROVED) {
+                throw new HttpError(409, 'Payment has already been approved');
+            }
 
             const targetUserId = doc.userId;
             const userEmail = doc.user.email;
@@ -127,7 +132,10 @@ export const approvePayment = async (req: Request, res: Response) => {
                             employeeCount: currentEmployeeCount,
                             pricePerEmployee: plan.employeePrice,
                             registrationFee: plan.registrationFee,
-                            totalAmount: plan.registrationFee + currentEmployeeCount * plan.employeePrice,
+                            // Exact decimal arithmetic: registrationFee + employees x employeePrice
+                            totalAmount: toDecimal(plan.registrationFee)
+                                .plus(toDecimal(plan.employeePrice).times(currentEmployeeCount))
+                                .toString(),
                             status: 'PAID',
                             paidAt: new Date(),
                             dueDate: new Date(),
@@ -220,14 +228,13 @@ export const approvePayment = async (req: Request, res: Response) => {
             message: 'Payment approved successfully and confirmation email sent',
             data: result.updatedDoc,
         });
-    } catch (error: any) {
-        console.error('Error approving payment:', error);
-        res.status(500).json({ success: false, message: error.message || 'Server error while approving payment' });
+    } catch (error) {
+        next(error);
     }
 };
 
 // Reject a manual payment proof
-export const rejectPayment = async (req: Request, res: Response) => {
+export const rejectPayment = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const { id } = req.params;
     try {
         const document = await prisma.userDocument.update({
@@ -253,7 +260,6 @@ export const rejectPayment = async (req: Request, res: Response) => {
             data: document,
         });
     } catch (error) {
-        console.error('Error rejecting payment:', error);
-        res.status(500).json({ success: false, message: 'Server error while rejecting payment' });
+        next(error);
     }
 };

@@ -1,5 +1,7 @@
 import { Prisma, Role, SubscriptionStatus } from '@prisma/client';
 import prisma from '../config/db';
+import { HttpError } from '../utils/httpError';
+import { moneyToString } from '../utils/money';
 
 export class AdminUsersService {
   async getAllUsers(page: number = 1, limit: number = 10, filters: { planName?: string; status?: string } = {}) {
@@ -15,7 +17,7 @@ export class AdminUsersService {
       } else {
         where.subscriptions = {
           some: {
-            status: filters.status as any,
+            status: filters.status as SubscriptionStatus,
           },
         };
       }
@@ -160,7 +162,7 @@ export class AdminUsersService {
     });
 
     if (!user) {
-      throw new Error('User not found');
+      throw new HttpError(404, 'User not found');
     }
 
     const sessionsSummary = {
@@ -173,7 +175,7 @@ export class AdminUsersService {
 
     const activeSub = user.subscriptions[0];
     const totalEmployees = user.companies.reduce((acc, comp) => acc + comp._count.employees, 0);
-    const monthlyBill = activeSub?.plan?.price || 0;
+    const monthlyBill = moneyToString(activeSub?.plan?.price);
 
     return {
       user: {
@@ -190,7 +192,7 @@ export class AdminUsersService {
       },
       currentSubscription: activeSub ? {
         planName: activeSub.plan.name,
-        price: activeSub.plan.price,
+        price: moneyToString(activeSub.plan.price),
         status: activeSub.status,
         startDate: activeSub.startDate,
         endDate: activeSub.endDate,
@@ -219,7 +221,7 @@ export class AdminUsersService {
       })),
       invoiceHistory: user.invoices.map(i => ({
         id: i.id,
-        amount: i.totalAmount,
+        amount: moneyToString(i.totalAmount),
         status: i.status,
         month: i.billingMonth,
         type: i.billingType,
@@ -266,7 +268,7 @@ export class AdminUsersService {
 
     const validStatuses = Object.values(SubscriptionStatus);
     if (!validStatuses.includes(normalizedStatus as SubscriptionStatus)) {
-      throw new Error(`Invalid status: ${status}`);
+      throw new HttpError(400, `Invalid status: ${status}`);
     }
 
     const latestSubscription = await prisma.subscription.findFirst({
@@ -275,7 +277,7 @@ export class AdminUsersService {
     });
 
     if (!latestSubscription) {
-      throw new Error('No subscription found for this user');
+      throw new HttpError(400, 'No subscription found for this user');
     }
 
     const updatedSubscription = await prisma.subscription.update({

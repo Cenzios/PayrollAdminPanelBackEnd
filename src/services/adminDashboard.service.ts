@@ -1,8 +1,17 @@
-import { PrismaClient } from '@prisma/client';
+import prisma from '../config/db';
+import { moneyToString, sumMoney } from '../utils/money';
 
-const prisma = new PrismaClient();
+interface DashboardSummaryDto {
+  activeUsers: number;
+  totalCompanies: number;
+  totalEmployees: number;
+  monthlyRevenue: string;
+  totalIncome: string;
+  recentActivities: { id: string; action: string; userName: string; createdAt: Date; resourceType: string | null }[];
+  chartData: { month: string; value: number }[];
+}
 
-export const getDashboardSummary = async (range: string = 'yearly') => {
+export const getDashboardSummary = async (range: string = 'yearly'): Promise<DashboardSummaryDto> => {
   const [
     activeUsers,
     totalCompanies,
@@ -30,7 +39,8 @@ export const getDashboardSummary = async (range: string = 'yearly') => {
     })
   ]);
 
-  const totalIncome = totalIncomesData._sum.totalAmount || 0;
+  // Money is returned as strings (exact decimal values)
+  const totalIncome = moneyToString(totalIncomesData._sum.totalAmount);
 
   // Calculate Monthly Revenue (sum of paid invoices in current month)
   const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
@@ -44,7 +54,7 @@ export const getDashboardSummary = async (range: string = 'yearly') => {
     }
   });
 
-  const monthlyRevenue = currentMonthInvoices.reduce((sum, inv) => sum + inv.totalAmount, 0);
+  const monthlyRevenue = sumMoney(currentMonthInvoices.map((inv) => inv.totalAmount)).toString();
 
   // Format activities for frontend
   const recentActivities = recentLogs.map(log => ({

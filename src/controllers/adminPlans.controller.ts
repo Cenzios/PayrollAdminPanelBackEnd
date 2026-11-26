@@ -1,46 +1,47 @@
-import { Request, Response } from 'express';
+import { NextFunction, Request, Response } from 'express';
 import adminPlansService from '../services/adminPlans.service';
 
 export class AdminPlansController {
-    async getAllPlans(_req: Request, res: Response) {
+    async getAllPlans(_req: Request, res: Response, next: NextFunction): Promise<void> {
         try {
             const plans = await adminPlansService.getAllPlans();
-            return res.status(200).json({
+            res.status(200).json({
                 success: true,
+                message: 'Plans fetched successfully',
                 data: plans,
             });
-        } catch (error: any) {
-            console.error('Error fetching plans:', error);
-            return res.status(500).json({
-                success: false,
-                error: 'Failed to fetch plans',
-            });
+        } catch (error) {
+            next(error);
         }
     }
 
-    async updatePlan(req: Request, res: Response) {
+    async updatePlan(req: Request, res: Response, next: NextFunction): Promise<void> {
         const { id } = req.params;
-        const { name, employeePrice, registrationFee, maxEmployees, description } = req.body;
+        // Body already validated by updatePlanValidators (money: decimal strings, numbers tolerated)
+        const { name, employeePrice, registrationFee, maxEmployees, description } = req.body as {
+            name?: string;
+            employeePrice?: string | number;
+            registrationFee?: string | number;
+            maxEmployees?: number | string;
+            description?: string;
+        };
 
         try {
             const updatedPlan = await adminPlansService.updatePlan(id, {
                 name,
-                employeePrice: employeePrice !== undefined ? Number(employeePrice) : undefined,
-                registrationFee: registrationFee !== undefined ? Number(registrationFee) : undefined,
-                maxEmployees: maxEmployees !== undefined ? Number(maxEmployees) : undefined,
+                employeePrice,
+                registrationFee,
+                maxEmployees: maxEmployees !== undefined ? parseInt(String(maxEmployees), 10) : undefined,
                 description,
             });
 
-            return res.status(200).json({
+            res.status(200).json({
                 success: true,
+                message: 'Plan updated successfully',
                 data: updatedPlan,
             });
-        } catch (error: any) {
-            console.error('Error updating plan:', error);
-            return res.status(500).json({
-                success: false,
-                error: 'Failed to update plan',
-            });
+        } catch (error) {
+            next(error);
         }
     }
 }

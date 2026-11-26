@@ -16,6 +16,7 @@ export const getAllUsers = async (
 
     res.status(200).json({
       success: true,
+      message: 'Users fetched successfully',
       data: result,
     });
   } catch (error) {
@@ -34,17 +35,11 @@ export const getUserById = async (
 
     res.status(200).json({
       success: true,
+      message: 'User fetched successfully',
       data: result,
     });
-  } catch (error: any) {
-    if (error.message === 'User not found') {
-      res.status(404).json({
-        success: false,
-        message: error.message,
-      });
-    } else {
-      next(error);
-    }
+  } catch (error) {
+    next(error);
   }
 };
 
@@ -55,15 +50,7 @@ export const updateUserSubscriptionStatus = async (
 ): Promise<void> => {
   try {
     const { userId } = req.params;
-    const { status } = req.body;
-
-    if (!status) {
-      res.status(400).json({
-        success: false,
-        error: 'Status is required',
-      });
-      return;
-    }
+    const { status } = req.body as { status: string };
 
     const result = await adminUsersService.updateUserStatus(userId, status);
 
@@ -72,14 +59,7 @@ export const updateUserSubscriptionStatus = async (
       message: 'User status updated successfully',
       data: result,
     });
-  } catch (error: any) {
-    if (error.message.includes('Invalid status') || error.message === 'No subscription found for this user') {
-      res.status(400).json({
-        success: false,
-        error: error.message,
-      });
-    } else {
-      next(error);
-    }
+  } catch (error) {
+    next(error);
   }
 };

@@ -1,7 +1,13 @@
 import nodemailer from 'nodemailer';
 import dotenv from 'dotenv';
+import { formatMoney } from '../utils/money';
 
 dotenv.config();
+
+export interface EmailResult {
+    success: boolean;
+    messageId?: string;
+}
 
 const transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST,
@@ -11,9 +17,33 @@ const transporter = nodemailer.createTransport({
         user: process.env.SMTP_USER,
         pass: process.env.SMTP_PASS,
     },
+    // Fail fast instead of hanging requests when SMTP is unreachable/misconfigured
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 15000,
 });
 
-export const sendPaymentConfirmationEmail = async (userEmail: string, fullName: string) => {
+const escapeHtml = (value: string): string => value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
+// Never throws: SMTP failures are logged (without credentials) and reported as { success: false }
+const deliver = async (mailOptions: nodemailer.SendMailOptions): Promise<EmailResult> => {
+    try {
+        const info = await transporter.sendMail(mailOptions);
+        console.log('Email sent: %s', info.messageId);
+        return { success: true, messageId: info.messageId };
+    } catch (error) {
+        const reason = error instanceof Error ? error.message : 'unknown error';
+        console.error(`Error sending email "${String(mailOptions.subject)}": ${reason}`);
+        return { success: false };
+    }
+};
+
+export const sendPaymentConfirmationEmail = async (userEmail: string, fullName: string): Promise<EmailResult> => {
     const mailOptions = {
         from: `"CenzHRM" <${process.env.EMAIL_FROM}>`,
         to: userEmail,
@@ -22,7 +52,7 @@ export const sendPaymentConfirmationEmail = async (userEmail: string, fullName: 
             // <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; padding: 20px; border-radius: 8px;">
                 <h2 style="color: #2c3e50;">Payment Confirmation</h2>
-                <p>Dear ${fullName},</p>
+                <p>Dear ${escapeHtml(fullName)},</p>
                 <p>We are pleased to inform you that your manual payment has been successfully approved.</p>
                 <p>Your subscription is now active, and you have full access to all features of CenzHRM.</p>
                 <p><strong>You can now log in to your dashboard:</strong></p>
@@ -34,17 +64,10 @@ export const sendPaymentConfirmationEmail = async (userEmail: string, fullName: 
         `,
     };
 
-    try {
-        const info = await transporter.sendMail(mailOptions);
-        console.log('Email sent: %s', info.messageId);
-        return { success: true, messageId: info.messageId };
-    } catch (error) {
-        console.error('Error sending email:', error);
-        return { success: false, error };
-    }
+    return deliver(mailOptions);
 };
 
-export const sendPaymentRejectionEmail = async (userEmail: string, fullName: string) => {
+export const sendPaymentRejectionEmail = async (userEmail: string, fullName: string): Promise<EmailResult> => {
     const mailOptions = {
         from: `"CenzHRM" <${process.env.EMAIL_FROM}>`,
         to: userEmail,
@@ -52,7 +75,7 @@ export const sendPaymentRejectionEmail = async (userEmail: string, fullName: str
         html: `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; padding: 20px; border-radius: 8px;">
                 <h2 style="color: #c0392b;">Payment Rejected</h2>
-                <p>Dear ${fullName},</p>
+                <p>Dear ${escapeHtml(fullName)},</p>
                 <p>We were unable to verify the bank slip submitted for your manual payment. This may be due to unclear, incomplete or mismatched payment details.</p>
                 <p>To continue activating your subscription, please resubmit a valid bank slip with clear and accurate payment details.</p>
                 <p><a href="https://payroll.dev.cenzios.com/login" style="display: inline-block; padding: 10px 20px; background-color: #3498db; color: #fff; text-decoration: none; border-radius: 5px;">Resubmit Bank Slip</a></p>
@@ -63,22 +86,15 @@ export const sendPaymentRejectionEmail = async (userEmail: string, fullName: str
         `,
     };
 
-    try {
-        const info = await transporter.sendMail(mailOptions);
-        console.log('Email sent: %s', info.messageId);
-        return { success: true, messageId: info.messageId };
-    } catch (error) {
-        console.error('Error sending email:', error);
-        return { success: false, error };
-    }
+    return deliver(mailOptions);
 };
 
 export const sendPaymentReminderEmail = async (
     userEmail: string,
     fullName: string,
     billingMonth: string,
-    amount: number
-) => {
+    amount: string
+): Promise<EmailResult> => {
     const mailOptions = {
         from: `"CenzHRM" <${process.env.EMAIL_FROM}>`,
         to: userEmail,
@@ -86,8 +102,8 @@ export const sendPaymentReminderEmail = async (
         html: `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; padding: 20px; border-radius: 8px;">
                 <h2 style="color: #c0392b;">Payment Reminder</h2>
-                <p>Dear ${fullName},</p>
-                <p>This is a friendly reminder that your invoice for <strong>${billingMonth}</strong> (LKR ${amount.toLocaleString()}) is currently overdue.</p>
+                <p>Dear ${escapeHtml(fullName)},</p>
+                <p>This is a friendly reminder that your invoice for <strong>${escapeHtml(billingMonth)}</strong> (LKR ${formatMoney(amount)}) is currently overdue.</p>
                 <p>Please make the payment at your earliest convenience to avoid any disruption to your account.</p>
                 <p><a href="https://payroll.dev.cenzios.com/login" style="display: inline-block; padding: 10px 20px; background-color: #3498db; color: #fff; text-decoration: none; border-radius: 5px;">Pay Now</a></p>
                 <p>If you've already made this payment, please disregard this notice.</p>
@@ -97,12 +113,5 @@ export const sendPaymentReminderEmail = async (
         `,
     };
 
-    try {
-        const info = await transporter.sendMail(mailOptions);
-        console.log('Email sent: %s', info.messageId);
-        return { success: true, messageId: info.messageId };
-    } catch (error) {
-        console.error('Error sending email:', error);
-        return { success: false, error };
-    }
+    return deliver(mailOptions);
 };

@@ -12,6 +12,7 @@ export const getDashboardStats = async (
 
     res.status(200).json({
       success: true,
+      message: 'Dashboard summary fetched successfully',
       data: stats,
     });
   } catch (error) {
