@@ -1,9 +1,43 @@
 import { Prisma, Role, SubscriptionStatus, UserStatus } from '@prisma/client';
 import prisma from '../config/db';
 import { HttpError } from '../utils/httpError';
-import { moneyToString } from '../utils/money';
+import { moneyToString, toDecimal } from '../utils/money';
 
 type AccountStatus = 'ACTIVE' | 'SUSPENDED' | 'LOCKED';
+
+export interface UserListFilters {
+  planName?: string;
+  /** SUSPENDED / LOCKED filter the account; any SubscriptionStatus filters the subscriptions. */
+  status?: string;
+  /** Matches full name or email, across all pages. */
+  search?: string;
+}
+
+/** Account-level filters; everything else is treated as a subscription status. */
+export const ACCOUNT_STATUS_FILTERS: readonly string[] = ['SUSPENDED', 'LOCKED'];
+
+const _statusWhere = (status: string): Prisma.UserWhereInput => {
+  // SUSPENDED = suspended by an admin (user.status) only; temporary lockouts are LOCKED
+  if (status === 'SUSPENDED') return { status: UserStatus.SUSPENDED };
+  if (status === 'LOCKED') return { status: UserStatus.ACTIVE, lockoutUntil: { gt: new Date() } };
+  return { subscriptions: { some: { status: status as SubscriptionStatus } } };
+};
+
+const buildUserListWhere = (filters: UserListFilters): Prisma.UserWhereInput => {
+  const conditions: Prisma.UserWhereInput[] = [{ role: Role.USER }];
+
+  if (filters.status) conditions.push(_statusWhere(filters.status));
+  if (filters.planName) {
+    conditions.push({ subscriptions: { some: { plan: { name: { contains: filters.planName } } } } });
+  }
+  if (filters.search) {
+    conditions.push({
+      OR: [{ fullName: { contains: filters.search } }, { email: { contains: filters.search } }],
+    });
+  }
+
+  return { AND: conditions };
+};
 
 /** SUSPENDED = suspended by an admin; LOCKED = temporary lockout after failed logins. */
 const getAccountStatus = (status: UserStatus, lockoutUntil: Date | null): AccountStatus => {
@@ -13,36 +47,9 @@ const getAccountStatus = (status: UserStatus, lockoutUntil: Date | null): Accoun
 };
 
 export class AdminUsersService {
-  async getAllUsers(page: number = 1, limit: number = 10, filters: { planName?: string; status?: string } = {}) {
+  async getAllUsers(page: number = 1, limit: number = 10, filters: UserListFilters = {}) {
     const skip = (page - 1) * limit;
-
-    const where: Prisma.UserWhereInput = {
-      role: Role.USER,
-    };
-
-    if (filters.status) {
-      if (filters.status === 'SUSPENDED') {
-        where.lockoutUntil = { gt: new Date() };
-      } else {
-        where.subscriptions = {
-          some: {
-            status: filters.status as SubscriptionStatus,
-          },
-        };
-      }
-    }
-
-    if (filters.planName) {
-      where.subscriptions = {
-        some: {
-          plan: {
-            name: {
-              contains: filters.planName,
-            },
-          },
-        },
-      };
-    }
+    const where = buildUserListWhere(filters);
 
     const [users, total] = await Promise.all([
       prisma.user.findMany({
@@ -187,7 +194,8 @@ export class AdminUsersService {
 
     const activeSub = user.subscriptions[0];
     const totalEmployees = user.companies.reduce((acc, comp) => acc + comp._count.employees, 0);
-    const monthlyBill = moneyToString(activeSub?.plan?.price);
+    // Monthly bill = plan per-employee price x active (non-deleted) employees across the user's companies
+    const monthlyBill = toDecimal(activeSub?.plan?.employeePrice).times(totalEmployees).toFixed(2);
 
     return {
       user: {
@@ -200,11 +208,13 @@ export class AdminUsersService {
         failedLoginAttempts: user.failedLoginAttempts,
         lockoutUntil: user.lockoutUntil,
         createdAt: user.createdAt,
-        accountStatus: user.lockoutUntil && user.lockoutUntil > new Date() ? 'LOCKED' : 'ACTIVE',
+        status: user.status,
+        accountStatus: getAccountStatus(user.status, user.lockoutUntil),
       },
       currentSubscription: activeSub ? {
         planName: activeSub.plan.name,
         price: moneyToString(activeSub.plan.price),
+        employeePrice: moneyToString(activeSub.plan.employeePrice),
         status: activeSub.status,
         startDate: activeSub.startDate,
         endDate: activeSub.endDate,
@@ -242,62 +252,6 @@ export class AdminUsersService {
       activeAddons: user.subscriptions.flatMap(s => s.addons),
       loginSessions: sessionsSummary,
     };
-  }
-
-  async updateUserStatus(userId: string, status: string) {
-    const normalizedStatus = status.toUpperCase();
-
-    if (normalizedStatus === 'SUSPENDED') {
-      const suspendedUser = await prisma.user.update({
-        where: { id: userId },
-        data: {
-          lockoutUntil: new Date('9999-12-31T23:59:59.999Z'),
-          status: 'SUSPENDED', // set user status to SUSPENDED
-        },
-        select: {
-          id: true,
-          lockoutUntil: true,
-        },
-      });
-
-      return {
-        userId: suspendedUser.id,
-        status: 'SUSPENDED',
-        lockoutUntil: suspendedUser.lockoutUntil,
-      };
-    }
-
-    if (normalizedStatus === 'ACTIVE') {
-      await prisma.user.update({
-        where: { id: userId },
-        data: {
-          lockoutUntil: null,
-          failedLoginAttempts: 0,
-          status: 'ACTIVE', // set user status to ACTIVE
-        },
-      });
-    }
-
-    const validStatuses = Object.values(SubscriptionStatus);
-    if (!validStatuses.includes(normalizedStatus as SubscriptionStatus)) {
-      throw new HttpError(400, `Invalid status: ${status}`);
-    }
-
-    const latestSubscription = await prisma.subscription.findFirst({
-      where: { userId },
-      orderBy: { createdAt: 'desc' },
-    });
-
-    if (!latestSubscription) {
-      throw new HttpError(400, 'No subscription found for this user');
-    }
-
-    const updatedSubscription = await prisma.subscription.update({
-      where: { id: latestSubscription.id },
-      data: { status: normalizedStatus as SubscriptionStatus },
-    });
-
-    return updatedSubscription;
   }
 }
 
