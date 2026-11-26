@@ -62,8 +62,12 @@ export class AdminRevenueService {
     if (filters.billingType) where.billingType = filters.billingType;
     if (filters.month) where.billingMonth = filters.month;
     if (filters.search) {
+      // The Financials search box matches the customer's name OR email
       where.user = {
-        fullName: { contains: filters.search }
+        OR: [
+          { fullName: { contains: filters.search } },
+          { email: { contains: filters.search } },
+        ],
       };
     }
 
