@@ -46,6 +46,24 @@ const getAccountStatus = (status: UserStatus, lockoutUntil: Date | null): Accoun
   return 'ACTIVE';
 };
 
+/** Employees that are billed: same filter as Payroll-backEnd subscription.service (status ACTIVE, not deleted). */
+const BILLABLE_EMPLOYEE_WHERE: Prisma.EmployeeWhereInput = { status: 'ACTIVE', deletedAt: null };
+
+/** Login-session fields the panel may see (never refreshJti or other token material). */
+const LOGIN_SESSION_SELECT = {
+  id: true,
+  ipAddress: true,
+  userAgent: true,
+  deviceType: true,
+  browser: true,
+  os: true,
+  country: true,
+  city: true,
+  loginAt: true,
+  logoutAt: true,
+  isSuspicious: true,
+} satisfies Prisma.UserLoginSessionSelect;
+
 export class AdminUsersService {
   async getAllUsers(page: number = 1, limit: number = 10, filters: UserListFilters = {}) {
     const skip = (page - 1) * limit;
@@ -147,36 +165,49 @@ export class AdminUsersService {
   }
 
   async getUserById(userId: string) {
+    // Explicit selects only: no password hash, verification token or refresh-token jti leaves the API
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      include: {
+      select: {
+        id: true,
+        fullName: true,
+        email: true,
+        role: true,
+        isEmailVerified: true,
+        isPasswordSet: true,
+        failedLoginAttempts: true,
+        lockoutUntil: true,
+        createdAt: true,
+        status: true,
         subscriptions: {
-          include: {
-            plan: true,
-            addons: true,
+          select: {
+            id: true,
+            status: true,
+            startDate: true,
+            endDate: true,
+            activatedAt: true,
+            plan: { select: { name: true, price: true, employeePrice: true, maxEmployees: true } },
+            addons: { select: { id: true, subscriptionId: true, type: true, value: true, createdAt: true } },
           },
           orderBy: { createdAt: 'desc' },
         },
         companies: {
-          include: {
-            _count: {
-              select: { employees: { where: { deletedAt: null } } }
-            }
-          }
+          select: {
+            id: true,
+            name: true,
+            // Billable employees only: the same rule as customer billing (subscription.service)
+            _count: { select: { employees: { where: BILLABLE_EMPLOYEE_WHERE } } },
+          },
         },
         invoices: {
+          select: { id: true, totalAmount: true, status: true, billingMonth: true, billingType: true, createdAt: true },
           orderBy: { createdAt: 'desc' },
         },
         loginSessions: {
+          select: LOGIN_SESSION_SELECT,
           take: 10,
           orderBy: { loginAt: 'desc' },
         },
-        _count: {
-          select: {
-            companies: true,
-            notifications: true,
-          }
-        }
       },
     });
 
@@ -194,7 +225,7 @@ export class AdminUsersService {
 
     const activeSub = user.subscriptions[0];
     const totalEmployees = user.companies.reduce((acc, comp) => acc + comp._count.employees, 0);
-    // Monthly bill = plan per-employee price x active (non-deleted) employees across the user's companies
+    // Monthly bill = plan per-employee price x billable (ACTIVE, non-deleted) employees across the user's companies
     const monthlyBill = toDecimal(activeSub?.plan?.employeePrice).times(totalEmployees).toFixed(2);
 
     return {
