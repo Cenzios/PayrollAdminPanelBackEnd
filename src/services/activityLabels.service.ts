@@ -47,14 +47,37 @@ const FALLBACK_TARGET: Record<TargetKind, string> = {
   none: '',
 };
 
+/**
+ * Labels for customer-API rows whose action name is also an admin action name (the customer
+ * API writes UPDATE_PROFILE for PUT /api/v1/auth/profile). A customer row never gets an
+ * admin label; shared names get a customer wording, any other customer row gets null.
+ */
+const CUSTOMER_LABEL: Partial<Record<AdminAuditAction, string>> = {
+  UPDATE_PROFILE: 'Updated their profile',
+  CHANGE_PASSWORD: 'Changed their password',
+};
+
+const ADMIN_ENDPOINT_PREFIX = '/api/admin/';
+
 const isAdminAuditAction = (value: string): value is AdminAuditAction => value in LABEL;
 
-/** Stored action, or (rows written before specific actions existed) the action derived from the endpoint. */
+/** Rows written by the admin API (all admin mutations live under /api/admin/); everything else is customer activity. */
+const _isAdminRow = (log: ActivityLogRef): boolean => log.endpoint.startsWith(ADMIN_ENDPOINT_PREFIX);
+
+/**
+ * Admin action of an admin-API row: the stored action, or (rows written before specific
+ * actions existed) the action derived from the endpoint. Customer-API rows get null even
+ * when their action name matches an admin action name.
+ */
 const _adminActionOf = (log: ActivityLogRef): AdminAuditAction | null => {
+  if (!_isAdminRow(log)) return null;
   if (isAdminAuditAction(log.action)) return log.action;
-  if (!log.endpoint.startsWith('/api/admin/')) return null;
   return resolveAdminAction(log.httpMethod, adminPathSegments(log.endpoint));
 };
+
+/** Customer wording for a customer-API row whose action name is shared with the admin API, else null. */
+const _customerLabelOf = (log: ActivityLogRef): string | null =>
+  !_isAdminRow(log) && isAdminAuditAction(log.action) ? CUSTOMER_LABEL[log.action] ?? null : null;
 
 const _idsOf = (logs: ActivityLogRef[], actions: (AdminAuditAction | null)[], kind: TargetKind): string[] => {
   const ids = logs
@@ -92,7 +115,9 @@ const _targetNames = async (logs: ActivityLogRef[], actions: (AdminAuditAction |
 
 /**
  * Human-readable labels for admin actions, e.g. "Approved payment for Jane Doe" or
- * "Updated plan Basic". Entries that are not admin actions (customer activity) get null.
+ * "Updated plan Basic". Customer activity never gets an admin label: a customer row whose
+ * action name is shared with the admin API gets a customer wording ("Updated their
+ * profile"), any other customer row gets null.
  */
 export const describeActivities = async (logs: ActivityLogRef[]): Promise<(string | null)[]> => {
   const actions = logs.map(_adminActionOf);
@@ -100,7 +125,7 @@ export const describeActivities = async (logs: ActivityLogRef[]): Promise<(strin
 
   return logs.map((log, i) => {
     const action = actions[i];
-    if (!action) return null;
+    if (!action) return _customerLabelOf(log);
     const id = log.resourceId ?? firstUuid(adminPathSegments(log.endpoint));
     const target = (id ? names.get(id) : undefined) ?? FALLBACK_TARGET[TARGET_KIND[action]];
     return LABEL[action](target);
