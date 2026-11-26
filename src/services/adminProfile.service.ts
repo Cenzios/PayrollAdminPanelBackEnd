@@ -1,3 +1,4 @@
+import { Role } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import prisma from '../config/db';
 import { HttpError } from '../utils/httpError';
@@ -15,18 +16,49 @@ export const getProfile = async (userId: string) => {
     });
 };
 
-export const updateProfile = async (userId: string, data: { fullName?: string; email?: string }) => {
-    if (data.email) {
-        const existingUser = await prisma.user.findFirst({
-            where: {
-                email: data.email,
-                NOT: { id: userId },
-            },
-        });
+export interface AdminProfileDto {
+    id: string;
+    fullName: string;
+    email: string;
+    role: Role;
+}
 
-        if (existingUser) {
-            throw new HttpError(409, 'Email already in use');
-        }
+export interface UpdateProfileInput {
+    fullName?: string;
+    email?: string;
+    /** Required when the email (the login identifier) changes. */
+    currentPassword?: string;
+}
+
+/** Re-authentication for an email change: the current password must be supplied and correct. */
+const _assertEmailChangeAllowed = async (userId: string, newEmail: string, currentPassword?: string): Promise<void> => {
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { email: true, password: true } });
+    if (!user || !user.password) {
+        throw new HttpError(404, 'User not found');
+    }
+    if (user.email.toLowerCase() === newEmail.toLowerCase()) return;
+
+    if (!currentPassword) {
+        throw new HttpError(422, 'Current password is required to change the email address', [
+            { field: 'currentPassword', message: 'Current password is required to change the email address' },
+        ]);
+    }
+    if (!(await bcrypt.compare(currentPassword, user.password))) {
+        throw new HttpError(400, 'Incorrect current password');
+    }
+
+    const existingUser = await prisma.user.findFirst({
+        where: { email: newEmail, NOT: { id: userId } },
+        select: { id: true },
+    });
+    if (existingUser) {
+        throw new HttpError(409, 'Email already in use');
+    }
+};
+
+export const updateProfile = async (userId: string, data: UpdateProfileInput): Promise<AdminProfileDto> => {
+    if (data.email) {
+        await _assertEmailChangeAllowed(userId, data.email, data.currentPassword);
     }
 
     const updatedUser = await prisma.user.update({

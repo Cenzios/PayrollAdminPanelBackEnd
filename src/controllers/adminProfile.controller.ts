@@ -20,9 +20,10 @@ export const getProfileDetails = async (req: Request, res: Response, next: NextF
 export const updateProfileDetails = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
         const userId = req.user?.id ?? '';
-        const { fullName, email } = req.body as { fullName?: string; email?: string };
+        const { fullName, email, currentPassword } = req.body as { fullName?: string; email?: string; currentPassword?: string };
 
-        const updatedUser = await adminProfileService.updateProfile(userId, { fullName, email });
+        // Changing the email (login identifier) requires the current password
+        const updatedUser = await adminProfileService.updateProfile(userId, { fullName, email, currentPassword });
 
         res.status(200).json({
             success: true,

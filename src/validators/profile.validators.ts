@@ -3,6 +3,7 @@ import { body, ValidationChain } from 'express-validator';
 export const updateProfileValidators: ValidationChain[] = [
     body('fullName').optional().isString().withMessage('fullName must be a string').trim().notEmpty().withMessage('fullName cannot be empty').isLength({ max: 191 }),
     body('email').optional().isString().trim().isEmail().withMessage('email must be valid').isLength({ max: 191 }),
+    body('currentPassword').optional().isString().withMessage('currentPassword must be a string').isLength({ max: 128 }),
 ];
 
 export const changePasswordValidators: ValidationChain[] = [
