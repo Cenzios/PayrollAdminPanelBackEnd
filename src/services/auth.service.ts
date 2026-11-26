@@ -1,5 +1,6 @@
 import { Role, User, UserStatus } from '@prisma/client';
 import bcrypt from 'bcryptjs';
+import { randomUUID } from 'crypto';
 import jwt, { SignOptions } from 'jsonwebtoken';
 import prisma from '../config/db';
 import { jwtConfig } from '../config/jwt';
@@ -72,27 +73,68 @@ const issueTokens = (user: Pick<User, 'id' | 'email' | 'fullName' | 'role'>, sid
     };
 };
 
+/**
+ * Customer-account lockout policy. Must match Payroll-backEnd/src/services/auth.service.ts (login):
+ * 3 failed attempts lock the account for 3 hours.
+ */
+const MAX_FAILED_LOGIN_ATTEMPTS = 3;
+const LOCKOUT_DURATION_MS = 3 * 60 * 60 * 1000;
+const INVALID_CREDENTIALS = 'Invalid credentials';
+
+/** bcrypt hash of a random value; compared against when the account does not exist (equal timing). */
+const DUMMY_HASH: Promise<string> = bcrypt.hash(randomUUID(), 12);
+
+/**
+ * A failed admin-panel login against a customer account counts toward that account's
+ * lockout exactly like a failed customer login (same fields, same thresholds).
+ */
+const _recordCustomerLoginFailure = async (userId: string): Promise<void> => {
+    try {
+        const updated = await prisma.user.update({
+            where: { id: userId },
+            data: { failedLoginAttempts: { increment: 1 }, lastFailedLogin: new Date() },
+            select: { failedLoginAttempts: true },
+        });
+        if (updated.failedLoginAttempts >= MAX_FAILED_LOGIN_ATTEMPTS) {
+            await prisma.user.update({
+                where: { id: userId },
+                data: { lockoutUntil: new Date(Date.now() + LOCKOUT_DURATION_MS) },
+            });
+        }
+    } catch (error) {
+        console.error('Failed to record failed login attempt:', error);
+    }
+};
+
+/**
+ * Admin login. Every failure (unknown email, wrong password, non-admin account, blocked
+ * account) answers the same "Invalid credentials", so this endpoint cannot be used to test
+ * customer passwords. Wrong passwords for customer accounts count toward their lockout.
+ */
 export const loginAdmin = async (email: string, password: string, meta: SessionMeta): Promise<IssuedTokens> => {
     const user = await prisma.user.findUnique({
         where: { email },
     });
 
     if (!user || !user.password) {
-        throw new HttpError(401, 'Invalid credentials');
+        await bcrypt.compare(password, await DUMMY_HASH);
+        throw new HttpError(401, INVALID_CREDENTIALS);
     }
 
-    // Verify the password before revealing anything about the account (role/suspension)
+    const isCustomer = user.role !== Role.SUPER_ADMIN;
+    const isLockedOut = user.lockoutUntil !== null && user.lockoutUntil > new Date();
     const isPasswordValid = await bcrypt.compare(password, user.password);
+
     if (!isPasswordValid) {
-        throw new HttpError(401, 'Invalid credentials');
+        // Locked customer accounts are not counted further (same as the customer API)
+        if (isCustomer && !isLockedOut && user.status !== UserStatus.SUSPENDED) {
+            await _recordCustomerLoginFailure(user.id);
+        }
+        throw new HttpError(401, INVALID_CREDENTIALS);
     }
 
-    if (user.role !== Role.SUPER_ADMIN) {
-        throw new HttpError(401, 'Access denied. Super admin only.');
-    }
-
-    if (isUserBlocked(user)) {
-        throw new HttpError(401, 'Account is suspended');
+    if (isCustomer || isUserBlocked(user)) {
+        throw new HttpError(401, INVALID_CREDENTIALS);
     }
 
     const session = await prisma.userLoginSession.create({
