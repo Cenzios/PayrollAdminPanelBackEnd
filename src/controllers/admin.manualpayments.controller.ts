@@ -2,11 +2,8 @@ import { Request, Response, NextFunction } from 'express';
 import { DocumentStatus } from '@prisma/client';
 import prisma from '../config/db';
 import { sendPaymentConfirmationEmail, sendPaymentRejectionEmail } from '../services/email.service';
-import {
-    approveManualPayment,
-    claimPendingDocument,
-    findTargetInvoice,
-} from '../services/manualPaymentApproval.service';
+import { approveManualPayment, claimPendingDocument } from '../services/manualPaymentApproval.service';
+import { PaymentProofRef, resolveTargetInvoice } from '../services/manualPaymentTarget.service';
 import { HttpError } from '../utils/httpError';
 import { moneyToString } from '../utils/money';
 
@@ -21,16 +18,25 @@ interface TargetInvoiceDto {
     status: string;
 }
 
+interface TargetInvoiceView {
+    targetInvoice: TargetInvoiceDto | null;
+    /** Why an approval would be refused (409), e.g. the linked invoice is already paid. */
+    targetInvoiceProblem: string | null;
+}
+
 /** For pending proofs: the invoice an approval would settle (so the admin can check the slip amount). */
-const _targetInvoiceFor = async (userId: string): Promise<TargetInvoiceDto | null> => {
-    const invoice = await findTargetInvoice(prisma, userId);
-    if (!invoice) return null;
+const _targetInvoiceFor = async (proof: PaymentProofRef): Promise<TargetInvoiceView> => {
+    const target = await resolveTargetInvoice(prisma, proof);
+    if (!target.invoice) return { targetInvoice: null, targetInvoiceProblem: target.problem };
     return {
-        id: invoice.id,
-        billingType: invoice.billingType,
-        billingMonth: invoice.billingMonth,
-        totalAmount: moneyToString(invoice.totalAmount),
-        status: invoice.status,
+        targetInvoice: {
+            id: target.invoice.id,
+            billingType: target.invoice.billingType,
+            billingMonth: target.invoice.billingMonth,
+            totalAmount: moneyToString(target.invoice.totalAmount),
+            status: target.invoice.status,
+        },
+        targetInvoiceProblem: null,
     };
 };
 
@@ -54,7 +60,7 @@ export const getPendingPayments = async (req: Request, res: Response, next: Next
         });
 
         const data = docStatus === DocumentStatus.PENDING
-            ? await Promise.all(documents.map(async (doc) => ({ ...doc, targetInvoice: await _targetInvoiceFor(doc.userId) })))
+            ? await Promise.all(documents.map(async (doc) => ({ ...doc, ...(await _targetInvoiceFor(doc)) })))
             : documents;
 
         res.status(200).json({
@@ -80,7 +86,14 @@ export const approvePayment = async (req: Request, res: Response, next: NextFunc
             amount: amount === undefined || amount === null ? undefined : String(amount).trim(),
         });
 
-        sendPaymentConfirmationEmail(user.email, user.fullName).catch((err: unknown) => {
+        // The email matches the outcome: activated, extended (new end date) or invoice settled only
+        sendPaymentConfirmationEmail(user.email, user.fullName, {
+            outcome: result.outcome,
+            billingMonth: result.invoice.billingMonth,
+            amount: result.invoice.totalAmount,
+            subscriptionStatus: result.subscription.status,
+            endDate: result.subscription.endDate,
+        }).catch((err: unknown) => {
             console.error('Failed to send confirmation email after approval:', err);
         });
 

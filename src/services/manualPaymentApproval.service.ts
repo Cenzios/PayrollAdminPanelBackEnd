@@ -3,6 +3,7 @@ import Decimal from 'decimal.js';
 import prisma from '../config/db';
 import { HttpError } from '../utils/httpError';
 import { moneyToString, toDecimal } from '../utils/money';
+import { OPEN_INVOICE_STATUSES, resolveTargetInvoice } from './manualPaymentTarget.service';
 
 type Tx = Prisma.TransactionClient;
 
@@ -11,8 +12,6 @@ export const MANUAL_PAYMENT_GATEWAY = 'MANUAL';
 
 /** All plans bill monthly (same period the customer API uses when it activates or renews). */
 const BILLING_PERIOD_MONTHS = 1;
-
-const OPEN_INVOICE_STATUSES: InvoiceStatus[] = [InvoiceStatus.PENDING, InvoiceStatus.OVERDUE];
 
 export type ApprovalOutcome = 'ACTIVATED' | 'EXTENDED' | 'INVOICE_ONLY';
 
@@ -41,17 +40,6 @@ export const addBillingPeriod = (from: Date): Date => {
   const lastDay = new Date(Date.UTC(result.getUTCFullYear(), result.getUTCMonth() + 1, 0)).getUTCDate();
   result.setUTCDate(Math.min(day, lastDay));
   return result;
-};
-
-/**
- * The invoice a payment proof settles. user_document has no invoice link (its referenceId is
- * the customer's bank reference), so it is the user's oldest open (PENDING / OVERDUE) invoice.
- */
-export const findTargetInvoice = async (tx: Tx | typeof prisma, userId: string): Promise<Invoice | null> => {
-  return tx.invoice.findFirst({
-    where: { userId, deletedAt: null, status: { in: OPEN_INVOICE_STATUSES } },
-    orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
-  });
 };
 
 const _isFirstInvoice = async (tx: Tx, invoice: Invoice): Promise<boolean> => {
@@ -102,7 +90,7 @@ const _applyToSubscription = async (
 const _assertAmountMatches = (amount: string | undefined, invoice: Invoice): void => {
   if (amount === undefined) return;
   if (!new Decimal(amount).equals(toDecimal(invoice.totalAmount))) {
-    const expected = moneyToString(invoice.totalAmount);
+    const expected = toDecimal(invoice.totalAmount).toFixed(2);
     throw new HttpError(422, `Slip amount ${amount} does not match the invoice total ${expected}`, [
       { field: 'amount', message: `Amount must equal the invoice total (${expected})` },
     ]);
@@ -117,9 +105,15 @@ export const claimPendingDocument = async (tx: Tx, documentId: string, status: D
   });
   if (claimed.count === 1) return;
 
-  const existing = await tx.userDocument.findUnique({ where: { id: documentId }, select: { status: true } });
-  if (!existing) throw new HttpError(404, 'Payment document not found');
-  throw new HttpError(409, `Payment proof has already been ${existing.status.toLowerCase()}`);
+  // Locking read: returns the latest committed status (a plain read would see this
+  // transaction's earlier snapshot, i.e. still PENDING when another request just decided it).
+  const rows = await tx.$queryRaw<{ status: string }[]>`SELECT status FROM user_document WHERE id = ${documentId} FOR UPDATE`;
+  const current = rows[0]?.status;
+  if (current === undefined) throw new HttpError(404, 'Payment document not found');
+  if (current === DocumentStatus.PENDING) {
+    throw new HttpError(409, 'This payment proof is being processed by another request. Please refresh and try again.');
+  }
+  throw new HttpError(409, `This payment proof was already ${current.toLowerCase()}`);
 };
 
 const _messageFor = (outcome: ApprovalOutcome): string => {
@@ -130,7 +124,8 @@ const _messageFor = (outcome: ApprovalOutcome): string => {
 
 /**
  * Approves one manual payment proof, all in one transaction:
- * the document (must be PENDING) is APPROVED, exactly one invoice is marked PAID via a MANUAL
+ * the document (must be PENDING) is APPROVED, exactly one invoice (the slip's linked invoice, or the
+ * oldest open one for legacy slips without a link) is marked PAID via a MANUAL
  * payment record, and that invoice's subscription is activated (first invoice of a pending
  * subscription) or extended from its current end date (renewal). No other invoice is touched.
  */
@@ -141,8 +136,10 @@ export const approveManualPayment = async (input: ApprovePaymentInput): Promise<
 
     await claimPendingDocument(tx, doc.id, DocumentStatus.APPROVED);
 
-    const invoice = await findTargetInvoice(tx, doc.userId);
-    if (!invoice) throw new HttpError(409, 'This user has no open invoice to settle with this payment');
+    // The slip's linked invoice (user_document.invoice_id), or the oldest open one for legacy slips
+    const target = await resolveTargetInvoice(tx, { userId: doc.userId, invoiceId: doc.invoiceId });
+    if (!target.invoice) throw new HttpError(409, target.problem);
+    const invoice = target.invoice;
     _assertAmountMatches(input.amount, invoice);
 
     const subscription = await tx.subscription.findUnique({ where: { id: invoice.subscriptionId } });
@@ -159,10 +156,13 @@ export const approveManualPayment = async (input: ApprovePaymentInput): Promise<
         metadata: { userDocumentId: doc.id, invoiceId: invoice.id, approvedBy: input.adminId, referenceId: doc.referenceId },
       },
     });
-    const paidInvoice = await tx.invoice.update({
-      where: { id: invoice.id },
+    // Conditional: an invoice settled meanwhile (another proof, an online payment) is not paid twice
+    const settled = await tx.invoice.updateMany({
+      where: { id: invoice.id, status: { in: OPEN_INVOICE_STATUSES } },
       data: { status: InvoiceStatus.PAID, paidAt: now, paymentIntentId: manualPayment.id },
     });
+    if (settled.count !== 1) throw new HttpError(409, 'This invoice was settled by another payment a moment ago');
+    const paidInvoice = await tx.invoice.findUniqueOrThrow({ where: { id: invoice.id } });
 
     const applied = await _applyToSubscription(tx, invoice, subscription, now);
     if (applied.outcome !== 'INVOICE_ONLY') {

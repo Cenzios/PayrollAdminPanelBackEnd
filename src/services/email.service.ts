@@ -30,6 +30,22 @@ const escapeHtml = (value: string): string => value
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
 
+/** Customer app base URL (CUSTOMER_APP_URL), without a trailing slash; null when not configured. */
+const customerAppUrl = (): string | null => {
+    const value = (process.env.CUSTOMER_APP_URL ?? '').trim().replace(/\/+$/, '');
+    return value.length > 0 ? value : null;
+};
+
+/** Button linking to the customer app's login page; omitted (with a warning) when CUSTOMER_APP_URL is unset. */
+const loginButton = (label: string): string => {
+    const base = customerAppUrl();
+    if (!base) {
+        console.warn('CUSTOMER_APP_URL is not set: customer emails are sent without a login link');
+        return '';
+    }
+    return `<p><a href="${escapeHtml(`${base}/login`)}" style="display: inline-block; padding: 10px 20px; background-color: #3498db; color: #fff; text-decoration: none; border-radius: 5px;">${escapeHtml(label)}</a></p>`;
+};
+
 // Never throws: SMTP failures are logged (without credentials) and reported as { success: false }
 const deliver = async (mailOptions: nodemailer.SendMailOptions): Promise<EmailResult> => {
     try {
@@ -43,20 +59,68 @@ const deliver = async (mailOptions: nodemailer.SendMailOptions): Promise<EmailRe
     }
 };
 
-export const sendPaymentConfirmationEmail = async (userEmail: string, fullName: string): Promise<EmailResult> => {
+/** What an approval did, so the confirmation email states exactly that. */
+export interface PaymentConfirmationDetails {
+    outcome: 'ACTIVATED' | 'EXTENDED' | 'INVOICE_ONLY';
+    billingMonth: string;
+    /** Invoice total, decimal string. */
+    amount: string;
+    subscriptionStatus: string;
+    endDate: Date;
+}
+
+interface ConfirmationCopy {
+    subject: string;
+    paragraphs: string[];
+    linkLabel: string;
+}
+
+const formatDate = (date: Date): string =>
+    date.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
+
+const _confirmationCopy = (details: PaymentConfirmationDetails): ConfirmationCopy => {
+    const paid = `Your manual payment of LKR ${formatMoney(details.amount)} for the ${escapeHtml(details.billingMonth)} invoice has been approved and the invoice is marked as paid.`;
+    if (details.outcome === 'ACTIVATED') {
+        return {
+            subject: 'Payment Confirmed - Your CenzPayroll subscription is active',
+            paragraphs: [paid, `Your subscription is now active until <strong>${formatDate(details.endDate)}</strong>, and you have full access to all features of CenzPayroll.`],
+            linkLabel: 'Login to Dashboard',
+        };
+    }
+    if (details.outcome === 'EXTENDED') {
+        return {
+            subject: 'Payment Confirmed - Your CenzPayroll subscription has been extended',
+            paragraphs: [paid, `Your subscription has been extended. Your new end date is <strong>${formatDate(details.endDate)}</strong>.`],
+            linkLabel: 'Login to Dashboard',
+        };
+    }
+    return {
+        subject: 'Payment Confirmed - Invoice settled',
+        paragraphs: [
+            paid,
+            `Your subscription status has not changed: it is still <strong>${escapeHtml(details.subscriptionStatus.toLowerCase().replace(/_/g, ' '))}</strong>. `
+            + 'If you expected this payment to activate or renew your subscription, please log in to check your plan or contact our support team.',
+        ],
+        linkLabel: 'Login to CenzPayroll',
+    };
+};
+
+export const sendPaymentConfirmationEmail = async (
+    userEmail: string,
+    fullName: string,
+    details: PaymentConfirmationDetails
+): Promise<EmailResult> => {
+    const copy = _confirmationCopy(details);
     const mailOptions = {
         from: `"CenzPayroll" <${process.env.EMAIL_FROM}>`,
         to: userEmail,
-        subject: 'Payment Confirmed - Welcome to CenzPayroll',
+        subject: copy.subject,
         html: `
-            // <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; padding: 20px; border-radius: 8px;">
                 <h2 style="color: #2c3e50;">Payment Confirmation</h2>
                 <p>Dear ${escapeHtml(fullName)},</p>
-                <p>We are pleased to inform you that your manual payment has been successfully approved.</p>
-                <p>Your subscription is now active, and you have full access to all features of CenzPayroll.</p>
-                <p><strong>You can now log in to your dashboard:</strong></p>
-                <p><a href="https://payroll.dev.cenzios.com/login" style="display: inline-block; padding: 10px 20px; background-color: #3498db; color: #fff; text-decoration: none; border-radius: 5px;">Login to Dashboard</a></p>
+                ${copy.paragraphs.map((text) => `<p>${text}</p>`).join('\n                ')}
+                ${loginButton(copy.linkLabel)}
                 <p>Thank you for choosing CenzPayroll!</p>
                 <br>
                 <p>Best regards,<br>Team CenzPayroll</p>
@@ -78,7 +142,7 @@ export const sendPaymentRejectionEmail = async (userEmail: string, fullName: str
                 <p>Dear ${escapeHtml(fullName)},</p>
                 <p>We were unable to verify the bank slip submitted for your manual payment. This may be due to unclear, incomplete or mismatched payment details.</p>
                 <p>To continue activating your subscription, please resubmit a valid bank slip with clear and accurate payment details.</p>
-                <p><a href="https://payroll.dev.cenzios.com/login" style="display: inline-block; padding: 10px 20px; background-color: #3498db; color: #fff; text-decoration: none; border-radius: 5px;">Resubmit Bank Slip</a></p>
+                ${loginButton('Resubmit Bank Slip')}
                 <p>For any assistance, please contact our support team.</p>
                 <br>
                 <p>Best regards,<br>Team CenzPayroll</p>
@@ -105,7 +169,7 @@ export const sendPaymentReminderEmail = async (
                 <p>Dear ${escapeHtml(fullName)},</p>
                 <p>This is a friendly reminder that your invoice for <strong>${escapeHtml(billingMonth)}</strong> (LKR ${formatMoney(amount)}) is currently overdue.</p>
                 <p>Please make the payment at your earliest convenience to avoid any disruption to your account.</p>
-                <p><a href="https://payroll.dev.cenzios.com/login" style="display: inline-block; padding: 10px 20px; background-color: #3498db; color: #fff; text-decoration: none; border-radius: 5px;">Pay Now</a></p>
+                ${loginButton('Pay Now')}
                 <p>If you've already made this payment, please disregard this notice.</p>
                 <br>
                 <p>Best regards,<br>Team CenzPayroll</p>
