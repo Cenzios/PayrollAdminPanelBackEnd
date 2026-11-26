@@ -25,9 +25,11 @@ export const _decodeRefreshToken = (token: string): RefreshTokenPayload | null =
     try {
         const decoded = jwt.verify(token, jwtConfig.refreshSecret);
         if (typeof decoded === 'string') return null;
-        const { userId, sid, type } = decoded as Record<string, unknown>;
-        if (typeof userId !== 'string' || typeof sid !== 'string' || type !== 'refresh') return null;
-        return { userId, sid, type };
+        const { userId, sid, type, jti } = decoded as Record<string, unknown>;
+        if (typeof userId !== 'string' || typeof sid !== 'string' || type !== 'refresh' || typeof jti !== 'string') {
+            return null;
+        }
+        return { userId, sid, type, jti };
     } catch {
         return null;
     }
@@ -48,13 +50,17 @@ export const _decodeAccessToken = (token: string): AccessTokenPayload | null => 
     }
 };
 
-const issueTokens = (user: Pick<User, 'id' | 'email' | 'fullName' | 'role'>, sid: string): IssuedTokens => {
+/**
+ * Signs an access token and a refresh token for the session. `refreshJti` must already be
+ * stored as the session's current refreshJti (login: on create; refresh: by the rotation).
+ */
+const issueTokens = (user: Pick<User, 'id' | 'email' | 'fullName' | 'role'>, sid: string, refreshJti: string): IssuedTokens => {
     const accessPayload: AccessTokenPayload = { id: user.id, email: user.email, role: user.role, sid };
     const token = jwt.sign(accessPayload, jwtConfig.secret, {
         expiresIn: jwtConfig.expiresIn as SignOptions['expiresIn'],
     });
 
-    const refreshPayload: RefreshTokenPayload = { userId: user.id, sid, type: 'refresh' };
+    const refreshPayload: RefreshTokenPayload = { userId: user.id, sid, type: 'refresh', jti: refreshJti };
     const refreshToken = jwt.sign(refreshPayload, jwtConfig.refreshSecret, {
         expiresIn: jwtConfig.refreshExpiresIn as SignOptions['expiresIn'],
     });
@@ -137,16 +143,18 @@ export const loginAdmin = async (email: string, password: string, meta: SessionM
         throw new HttpError(401, INVALID_CREDENTIALS);
     }
 
+    const refreshJti = randomUUID();
     const session = await prisma.userLoginSession.create({
         data: {
             userId: user.id,
             ipAddress: truncate(meta.ipAddress, 191),
             userAgent: truncate(meta.userAgent, 191),
+            refreshJti,
         },
         select: { id: true },
     });
 
-    return issueTokens(user, session.id);
+    return issueTokens(user, session.id, refreshJti);
 };
 
 export const refreshAdminSession = async (refreshToken: string | undefined): Promise<IssuedTokens> => {
@@ -169,8 +177,22 @@ export const refreshAdminSession = async (refreshToken: string | undefined): Pro
         throw new HttpError(401, SESSION_REVOKED_MESSAGE);
     }
 
-    // Rotation: a fresh refresh token (new iat/exp) for the same session
-    return issueTokens(session.user, session.id);
+    // Single-use rotation: only the session's current jti may be exchanged, and only once.
+    // The compare-and-set makes concurrent use of the same token fail for all but one caller.
+    const nextJti = randomUUID();
+    const rotated = await prisma.userLoginSession.updateMany({
+        where: { id: session.id, logoutAt: null, refreshJti: payload.jti },
+        data: { refreshJti: nextJti },
+    });
+
+    if (rotated.count !== 1) {
+        // An already-used (or never issued) refresh token: treat as theft, revoke the whole session
+        console.warn(`Refresh token reuse detected for session ${session.id}; session revoked`);
+        await revokeSession(session.id);
+        throw new HttpError(401, SESSION_REVOKED_MESSAGE);
+    }
+
+    return issueTokens(session.user, session.id, nextJti);
 };
 
 /** Revokes a session by id. Idempotent. */

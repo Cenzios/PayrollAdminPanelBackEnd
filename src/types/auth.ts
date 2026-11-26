@@ -9,6 +9,8 @@ export interface RefreshTokenPayload {
   userId: string;
   sid: string;
   type: 'refresh';
+  /** Single-use id; must equal UserLoginSession.refreshJti or the token counts as reused. */
+  jti: string;
 }
 
 export interface SessionMeta {
