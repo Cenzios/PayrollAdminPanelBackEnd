@@ -217,6 +217,7 @@ model Salary {
 
   @@index([companyId], map: "salary_companyId_fkey")
   @@index([employeeId], map: "salary_employeeId_fkey")
+  @@unique([employeeId, month, year], map: "salary_employee_month_year_key")
   @@index([taxConfigId], map: "salary_tax_config_id_fkey")
   @@map("salary")
 }
