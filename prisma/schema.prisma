@@ -113,6 +113,8 @@ model User {
   subscriptions       Subscription[]
   userDocuments       UserDocument[]
   loginSessions       UserLoginSession[]
+  approvedSalaries    Salary[]           @relation("SalaryApprovedBy")
+  updatedSalaries     Salary[]           @relation("SalaryUpdatedBy")
 
   @@map("user")
 }
@@ -212,6 +214,18 @@ model Salary {
   paidLeave         Int               @default(0) @map("paid_leave")
   leaveDays         Int               @default(0) @map("leave_days")
   sickLeaveDays     Int               @default(0) @map("sick_leave_days")
+  /// DRAFT until approved; only APPROVED salaries are paid / reported. Voiding deletes a draft.
+  status            SalaryStatus      @default(DRAFT)
+  /// Inputs kept so a draft can be edited / regenerated (NULL on rows created before drafts existed)
+  companyWorkingDays Int?             @map("company_working_days")
+  isEpfEnabled      Boolean           @default(true) @map("is_epf_enabled")
+  isLoanEnabled     Boolean           @default(true) @map("is_loan_enabled")
+  approvedAt        DateTime?         @map("approved_at")
+  approvedById      String?           @map("approved_by_id")
+  updatedById       String?           @map("updated_by_id")
+  updatedAt         DateTime          @updatedAt @map("updated_at")
+  approvedBy        User?             @relation("SalaryApprovedBy", fields: [approvedById], references: [id])
+  updatedBy         User?             @relation("SalaryUpdatedBy", fields: [updatedById], references: [id])
   company           Company           @relation(fields: [companyId], references: [id])
   employee          Employee          @relation(fields: [employeeId], references: [id])
   payrollRates      PayrollRates?     @relation(fields: [taxConfigId], references: [id])
@@ -222,6 +236,9 @@ model Salary {
   @@index([employeeId], map: "salary_employeeId_fkey")
   @@unique([employeeId, month, year], map: "salary_employee_month_year_key")
   @@index([taxConfigId], map: "salary_tax_config_id_fkey")
+  @@index([approvedById], map: "salary_approved_by_id_fkey")
+  @@index([updatedById], map: "salary_updated_by_id_fkey")
+  @@index([companyId, year, month, status], map: "salary_company_period_status_idx")
   @@map("salary")
 }
 
@@ -447,6 +464,7 @@ model LoanInstallment {
   loan              Loan                  @relation(fields: [loanId], references: [id])
 
   @@index([loanId], map: "loan_installment_loan_id_fkey")
+  @@index([salaryId], map: "loan_installment_salary_id_idx")
   @@map("loan_installment")
 }
 
@@ -545,6 +563,14 @@ enum LoanInstallmentStatus {
   PAID
   PARTIAL
   SKIPPED
+  /// Held by a DRAFT salary (salaryId set): becomes PAID when the salary is approved,
+  /// PENDING again when the draft is edited with the loan off or voided.
+  RESERVED
+}
+
+enum SalaryStatus {
+  DRAFT
+  APPROVED
 }
 
 enum DocumentType {
