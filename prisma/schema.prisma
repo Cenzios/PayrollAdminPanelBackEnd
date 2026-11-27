@@ -83,6 +83,7 @@ model Company {
   employees     Employee[]
   loans         Loan[]
   salaries      Salary[]
+  loanChangeLogs LoanChangeLog[]
 
   @@index([ownerId], map: "company_owner_id_fkey")
   @@map("company")
@@ -115,6 +116,7 @@ model User {
   loginSessions       UserLoginSession[]
   approvedSalaries    Salary[]           @relation("SalaryApprovedBy")
   updatedSalaries     Salary[]           @relation("SalaryUpdatedBy")
+  loanChangeLogs      LoanChangeLog[]    @relation("LoanChangeLogUser")
 
   @@map("user")
 }
@@ -442,6 +444,14 @@ model Loan {
   supportingDoc        EmployeeDocument?  @relation(fields: [supportingDocId], references: [id])
   installments         LoanInstallment[]
   supportingDocuments  EmployeeDocument[] @relation("LoanDocuments")
+  /// ACTIVE until every instalment is PAID (COMPLETED), it is settled early outside payroll
+  /// (SETTLED) or cancelled with nothing paid (CANCELLED). Only ACTIVE loans are deducted.
+  status                LoanStatus         @default(ACTIVE)
+  settledAmount         Decimal?           @map("settled_amount") @db.Decimal(19, 4)
+  settledAt             DateTime?          @map("settled_at")
+  settlementMethod      SettlementMethod?  @map("settlement_method")
+  settlementNote        String?            @map("settlement_note") @db.VarChar(500)
+  changeLogs            LoanChangeLog[]
 
   @@index([companyId], map: "loan_company_id_fkey")
   @@index([employeeId], map: "loan_employee_id_fkey")
@@ -566,6 +576,52 @@ enum LoanInstallmentStatus {
   /// Held by a DRAFT salary (salaryId set): becomes PAID when the salary is approved,
   /// PENDING again when the draft is edited with the loan off or voided.
   RESERVED
+  /// Closed by an early settlement paid outside payroll (never deducted)
+  SETTLED
+  /// The loan was cancelled before anything was paid (never deducted)
+  CANCELLED
+}
+
+enum LoanStatus {
+  ACTIVE
+  COMPLETED
+  SETTLED
+  CANCELLED
+}
+
+enum SettlementMethod {
+  CASH
+  BANK_TRANSFER
+}
+
+enum LoanChangeAction {
+  CREATE
+  EDIT
+  SETTLE
+  CANCEL
+}
+
+/// Loan change history: one row per changed field on EDIT, plus one row per CREATE / SETTLE / CANCEL.
+/// Values are stored raw (money and rates as decimal strings, dates as YYYY-MM-DD).
+model LoanChangeLog {
+  id          String           @id @default(uuid())
+  loanId      String           @map("loan_id")
+  companyId   String           @map("company_id")
+  changedById String           @map("changed_by_id")
+  changedAt   DateTime         @default(now()) @map("changed_at")
+  action      LoanChangeAction
+  field       String?          @db.VarChar(64)
+  oldValue    String?          @map("old_value") @db.Text
+  newValue    String?          @map("new_value") @db.Text
+  reason      String?          @db.Text
+  loan        Loan             @relation(fields: [loanId], references: [id])
+  company     Company          @relation(fields: [companyId], references: [id])
+  changedBy   User             @relation("LoanChangeLogUser", fields: [changedById], references: [id])
+
+  @@index([loanId, changedAt], map: "loan_change_log_loan_id_changed_at_idx")
+  @@index([companyId], map: "loan_change_log_company_id_fkey")
+  @@index([changedById], map: "loan_change_log_changed_by_id_fkey")
+  @@map("loan_change_log")
 }
 
 enum SalaryStatus {
