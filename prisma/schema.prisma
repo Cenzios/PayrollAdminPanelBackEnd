@@ -141,7 +141,10 @@ model Employee {
   epfEtfAmount        Decimal?               @map("epf_etf_amount") @db.Decimal(19, 4)
   epfNumber           String?              @map("epf_number")
   salaryType          SalaryType           @default(DAILY) @map("salary_type")
+  /// Deprecated alias of annualLeave (kept in sync). Was a balance decremented by salaries until 2026-11-27.
   paidLeave           Int                  @default(0) @map("paid_leave")
+  /// Annual paid-leave entitlement (days). Balance for year Y = annualLeave - SUM(salary.leaveDays of year Y).
+  annualLeave         Int                  @default(0) @map("annual_leave")
   company             Company              @relation(fields: [companyId], references: [id])
   bank                EmployeeBank?
   documents           EmployeeDocument[]
