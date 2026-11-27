@@ -1,19 +1,18 @@
-import { DocumentStatus, Invoice, InvoiceStatus, Prisma, Subscription, SubscriptionStatus } from '@prisma/client';
+import { DocumentStatus, Invoice, InvoiceStatus, Prisma, SubscriptionStatus } from '@prisma/client';
 import Decimal from 'decimal.js';
 import prisma from '../config/db';
 import { HttpError } from '../utils/httpError';
 import { moneyToString, toDecimal } from '../utils/money';
 import { OPEN_INVOICE_STATUSES, resolveTargetInvoice } from './manualPaymentTarget.service';
+import { applyInvoicePayment, type PaymentOutcome } from './subscriptionLifecycle.service';
 
 type Tx = Prisma.TransactionClient;
 
 /** How a paid invoice was settled. Stored as PaymentIntent.gateway on the intent linked to the invoice. */
 export const MANUAL_PAYMENT_GATEWAY = 'MANUAL';
 
-/** All plans bill monthly (same period the customer API uses when it activates or renews). */
-const BILLING_PERIOD_MONTHS = 1;
-
-export type ApprovalOutcome = 'ACTIVATED' | 'EXTENDED' | 'INVOICE_ONLY';
+/** Same outcomes as an online payment of the invoice (see subscriptionLifecycle.service). */
+export type ApprovalOutcome = PaymentOutcome;
 
 export interface ApprovePaymentInput {
   documentId: string;
@@ -30,62 +29,6 @@ export interface ApprovalResultDto {
   user: { email: string; fullName: string };
   message: string;
 }
-
-/** Adds calendar months, clamping to the last day of the target month (Jan 31 + 1 -> Feb 28/29). */
-export const addBillingPeriod = (from: Date): Date => {
-  const result = new Date(from.getTime());
-  const day = result.getUTCDate();
-  result.setUTCDate(1);
-  result.setUTCMonth(result.getUTCMonth() + BILLING_PERIOD_MONTHS);
-  const lastDay = new Date(Date.UTC(result.getUTCFullYear(), result.getUTCMonth() + 1, 0)).getUTCDate();
-  result.setUTCDate(Math.min(day, lastDay));
-  return result;
-};
-
-const _isFirstInvoice = async (tx: Tx, invoice: Invoice): Promise<boolean> => {
-  if (invoice.billingType === 'REGISTRATION') return true;
-  const earlier = await tx.invoice.count({
-    where: { subscriptionId: invoice.subscriptionId, deletedAt: null, createdAt: { lt: invoice.createdAt } },
-  });
-  return earlier === 0;
-};
-
-/** Applies the payment to the invoice's subscription. Never cancels, recreates or rewinds one. */
-const _applyToSubscription = async (
-  tx: Tx,
-  invoice: Invoice,
-  subscription: Subscription,
-  now: Date
-): Promise<{ outcome: ApprovalOutcome; subscription: Subscription }> => {
-  if (subscription.status === SubscriptionStatus.PENDING_ACTIVATION && await _isFirstInvoice(tx, invoice)) {
-    const updated = await tx.subscription.update({
-      where: { id: subscription.id },
-      data: { status: SubscriptionStatus.ACTIVE, activatedAt: now, startDate: now, endDate: addBillingPeriod(now) },
-    });
-    return { outcome: 'ACTIVATED', subscription: updated };
-  }
-
-  if (subscription.status === SubscriptionStatus.ACTIVE || subscription.status === SubscriptionStatus.PAST_DUE) {
-    // Renewal: extend from the current end date, so no paid days are lost
-    const stillOverdue = await tx.invoice.count({
-      where: { subscriptionId: subscription.id, id: { not: invoice.id }, deletedAt: null, status: InvoiceStatus.OVERDUE },
-    });
-    const updated = await tx.subscription.update({
-      where: { id: subscription.id },
-      data: {
-        endDate: addBillingPeriod(subscription.endDate),
-        // A grace-period (PAST_DUE) subscription is ACTIVE again once nothing is overdue
-        ...(subscription.status === SubscriptionStatus.PAST_DUE && stillOverdue === 0
-          ? { status: SubscriptionStatus.ACTIVE }
-          : {}),
-      },
-    });
-    return { outcome: 'EXTENDED', subscription: updated };
-  }
-
-  // CANCELLED / EXPIRED / FAILED / DRAFT: settle the invoice only, the subscription stays as it is
-  return { outcome: 'INVOICE_ONLY', subscription };
-};
 
 const _assertAmountMatches = (amount: string | undefined, invoice: Invoice): void => {
   if (amount === undefined) return;
@@ -119,15 +62,18 @@ export const claimPendingDocument = async (tx: Tx, documentId: string, status: D
 const _messageFor = (outcome: ApprovalOutcome): string => {
   if (outcome === 'ACTIVATED') return 'Payment approved. Invoice marked paid and subscription activated.';
   if (outcome === 'EXTENDED') return 'Payment approved. Invoice marked paid and subscription extended.';
+  if (outcome === 'SETTLED') return 'Payment approved. Registration invoice marked paid; the subscription period was already granted at activation.';
   return 'Payment approved. Invoice marked paid; the subscription status was not changed.';
 };
 
 /**
  * Approves one manual payment proof, all in one transaction:
  * the document (must be PENDING) is APPROVED, exactly one invoice (the slip's linked invoice, or the
- * oldest open one for legacy slips without a link) is marked PAID via a MANUAL
- * payment record, and that invoice's subscription is activated (first invoice of a pending
- * subscription) or extended from its current end date (renewal). No other invoice is touched.
+ * oldest open one for legacy slips without a link) is marked PAID via a MANUAL payment record, and
+ * that invoice is applied to its subscription by the same rules as an online payment
+ * (subscriptionLifecycle.service.applyInvoicePayment): activation ends the previous plan/trial,
+ * a pay-later registration invoice does not add a period, a renewal extends from the current
+ * end date. No other invoice is touched.
  */
 export const approveManualPayment = async (input: ApprovePaymentInput): Promise<ApprovalResultDto> => {
   return prisma.$transaction(async (tx): Promise<ApprovalResultDto> => {
@@ -162,12 +108,11 @@ export const approveManualPayment = async (input: ApprovePaymentInput): Promise<
       data: { status: InvoiceStatus.PAID, paidAt: now, paymentIntentId: manualPayment.id },
     });
     if (settled.count !== 1) throw new HttpError(409, 'This invoice was settled by another payment a moment ago');
-    const paidInvoice = await tx.invoice.findUniqueOrThrow({ where: { id: invoice.id } });
 
-    const applied = await _applyToSubscription(tx, invoice, subscription, now);
-    if (applied.outcome !== 'INVOICE_ONLY') {
-      await tx.user.update({ where: { id: doc.userId }, data: { isTrialUser: false } });
-    }
+    const applied = await applyInvoicePayment(tx, invoice, now);
+    if (!applied) throw new HttpError(409, 'The invoice has no subscription');
+    // Read after applying: an activation moves the invoice's billing period to the activation date
+    const paidInvoice = await tx.invoice.findUniqueOrThrow({ where: { id: invoice.id } });
 
     return {
       documentId: doc.id,

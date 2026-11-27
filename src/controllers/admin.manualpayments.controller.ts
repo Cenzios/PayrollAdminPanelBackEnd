@@ -86,7 +86,7 @@ export const approvePayment = async (req: Request, res: Response, next: NextFunc
             amount: amount === undefined || amount === null ? undefined : String(amount).trim(),
         });
 
-        // The email matches the outcome: activated, extended (new end date) or invoice settled only
+        // The email matches the outcome: activated, extended (new end date), registration settled, or invoice settled only
         sendPaymentConfirmationEmail(user.email, user.fullName, {
             outcome: result.outcome,
             billingMonth: result.invoice.billingMonth,

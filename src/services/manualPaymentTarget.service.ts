@@ -3,7 +3,11 @@ import prisma from '../config/db';
 
 type Client = Prisma.TransactionClient | typeof prisma;
 
-export const OPEN_INVOICE_STATUSES: InvoiceStatus[] = [InvoiceStatus.PENDING, InvoiceStatus.OVERDUE];
+/**
+ * Invoice states a payment can still settle. Same as the customer API (subscriptionLifecycle.service
+ * OPEN_INVOICE_STATUSES / userDocument.service), which accepts slips for FAILED invoices too.
+ */
+export const OPEN_INVOICE_STATUSES: InvoiceStatus[] = [InvoiceStatus.PENDING, InvoiceStatus.OVERDUE, InvoiceStatus.FAILED];
 
 /** The proof fields that decide which invoice it settles. */
 export interface PaymentProofRef {
@@ -39,7 +43,7 @@ const _linkedInvoice = async (client: Client, proof: PaymentProofRef, invoiceId:
 /**
  * The invoice a payment proof settles: exactly its linked invoice when user_document.invoice_id
  * is set (it must belong to the proof's user and be open), otherwise (legacy slips without a link)
- * the user's oldest open (PENDING / OVERDUE) invoice.
+ * the user's oldest open (PENDING / OVERDUE / FAILED) invoice.
  */
 export const resolveTargetInvoice = async (client: Client, proof: PaymentProofRef): Promise<TargetInvoiceResolution> => {
   if (proof.invoiceId !== null) {

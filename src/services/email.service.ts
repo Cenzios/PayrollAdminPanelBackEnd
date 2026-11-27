@@ -61,7 +61,8 @@ const deliver = async (mailOptions: nodemailer.SendMailOptions): Promise<EmailRe
 
 /** What an approval did, so the confirmation email states exactly that. */
 export interface PaymentConfirmationDetails {
-    outcome: 'ACTIVATED' | 'EXTENDED' | 'INVOICE_ONLY';
+    /** Same values as subscriptionLifecycle.service PaymentOutcome. */
+    outcome: 'ACTIVATED' | 'EXTENDED' | 'SETTLED' | 'INVOICE_ONLY';
     billingMonth: string;
     /** Invoice total, decimal string. */
     amount: string;
@@ -77,6 +78,8 @@ interface ConfirmationCopy {
 
 const formatDate = (date: Date): string =>
     date.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
+
+const _statusLabel = (status: string): string => status.toLowerCase().replace(/_/g, ' ');
 
 const _confirmationCopy = (details: PaymentConfirmationDetails): ConfirmationCopy => {
     const paid = `Your manual payment of LKR ${formatMoney(details.amount)} for the ${escapeHtml(details.billingMonth)} invoice has been approved and the invoice is marked as paid.`;
@@ -94,11 +97,19 @@ const _confirmationCopy = (details: PaymentConfirmationDetails): ConfirmationCop
             linkLabel: 'Login to Dashboard',
         };
     }
+    if (details.outcome === 'SETTLED') {
+        // Pay-later registration invoice: the period was granted at activation, the end date is unchanged
+        return {
+            subject: 'Payment Confirmed - Registration invoice settled',
+            paragraphs: [paid, `Your subscription is ${escapeHtml(_statusLabel(details.subscriptionStatus))} and its current period runs until <strong>${formatDate(details.endDate)}</strong>.`],
+            linkLabel: 'Login to Dashboard',
+        };
+    }
     return {
         subject: 'Payment Confirmed - Invoice settled',
         paragraphs: [
             paid,
-            `Your subscription status has not changed: it is still <strong>${escapeHtml(details.subscriptionStatus.toLowerCase().replace(/_/g, ' '))}</strong>. `
+            `Your subscription status has not changed: it is still <strong>${escapeHtml(_statusLabel(details.subscriptionStatus))}</strong>. `
             + 'If you expected this payment to activate or renew your subscription, please log in to check your plan or contact our support team.',
         ],
         linkLabel: 'Login to CenzPayroll',
