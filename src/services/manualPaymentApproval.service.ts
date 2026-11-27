@@ -4,6 +4,7 @@ import prisma from '../config/db';
 import { HttpError } from '../utils/httpError';
 import { moneyToString, toDecimal } from '../utils/money';
 import { OPEN_INVOICE_STATUSES, resolveTargetInvoice } from './manualPaymentTarget.service';
+import { assertPendingPlanStillFits } from './planLimit.service';
 import { applyInvoicePayment, type PaymentOutcome } from './subscriptionLifecycle.service';
 
 type Tx = Prisma.TransactionClient;
@@ -87,6 +88,7 @@ export const approveManualPayment = async (input: ApprovePaymentInput): Promise<
     if (!target.invoice) throw new HttpError(409, target.problem);
     const invoice = target.invoice;
     _assertAmountMatches(input.amount, invoice);
+    await assertPendingPlanStillFits(tx, invoice);
 
     const subscription = await tx.subscription.findUnique({ where: { id: invoice.subscriptionId } });
     if (!subscription) throw new HttpError(409, 'The invoice has no subscription');
