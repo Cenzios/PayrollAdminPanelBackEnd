@@ -561,6 +561,7 @@ enum InvoiceStatus {
   PAID
   OVERDUE
   FAILED
+  VOID
 }
 
 enum InterestRateType {

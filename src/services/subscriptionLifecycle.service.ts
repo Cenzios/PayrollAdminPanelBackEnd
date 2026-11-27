@@ -16,6 +16,12 @@ export const FREE_TRIAL_PLAN_ID = '77777777-7777-7777-7777-777777777777';
 /** Subscription states that are "live" (the customer is on this plan right now). */
 const LIVE_STATUSES: SubscriptionStatus[] = [SubscriptionStatus.ACTIVE, SubscriptionStatus.PAST_DUE];
 
+/** States of a subscription that was activated at some point and can be superseded by a newer one. */
+const SUPERSEDABLE_STATUSES: SubscriptionStatus[] = [...LIVE_STATUSES, SubscriptionStatus.CANCELLED, SubscriptionStatus.EXPIRED];
+
+/** Unpaid invoice states (same as manualPaymentTarget.service OPEN_INVOICE_STATUSES). */
+const UNPAID_INVOICE_STATUSES: InvoiceStatus[] = [InvoiceStatus.PENDING, InvoiceStatus.OVERDUE, InvoiceStatus.FAILED];
+
 /** All plans bill monthly. */
 const BILLING_PERIOD_MONTHS = 1;
 
@@ -71,13 +77,41 @@ export const endSupersededSubscriptions = async (tx: Tx, userId: string, keepId:
   return others.length;
 };
 
-/** Makes `subscriptionId` the live subscription now: ACTIVE for one billing period, previous plan/trial ended. */
+/**
+ * Voids every unpaid (PENDING / OVERDUE / FAILED) REGISTRATION invoice of the subscriptions that
+ * `keepId` supersedes (plan change, trial conversion, re-subscribe after a cancellation), so a
+ * replaced pay-later plan's registration invoice never goes OVERDUE or blocks a customer who paid
+ * for the new plan. Unpaid MONTHLY invoices are kept: they are debt for service already used.
+ * Subscriptions still waiting for activation are not touched. Same rule as the customer API.
+ */
+export const voidSupersededRegistrationInvoices = async (tx: Tx, userId: string, keepId: string): Promise<number> => {
+  const voided = await tx.invoice.updateMany({
+    where: {
+      userId,
+      subscriptionId: { not: keepId },
+      billingType: 'REGISTRATION',
+      status: { in: UNPAID_INVOICE_STATUSES },
+      subscription: { status: { in: SUPERSEDABLE_STATUSES } },
+    },
+    data: { status: InvoiceStatus.VOID },
+  });
+  if (voided.count > 0) {
+    console.log(`[SUBSCRIPTION] Voided ${voided.count} unpaid registration invoice(s) of plans superseded by ${keepId}`);
+  }
+  return voided.count;
+};
+
+/**
+ * Makes `subscriptionId` the live subscription now: ACTIVE for one billing period, previous plan/trial
+ * ended and the superseded plans' unpaid registration invoices voided (same transaction).
+ */
 export const activateSubscriptionNow = async (tx: Tx, subscriptionId: string, now: Date): Promise<Subscription> => {
   const activated = await tx.subscription.update({
     where: { id: subscriptionId },
     data: { status: SubscriptionStatus.ACTIVE, activatedAt: now, startDate: now, endDate: addBillingPeriod(now) },
   });
   await endSupersededSubscriptions(tx, activated.userId, activated.id, now);
+  await voidSupersededRegistrationInvoices(tx, activated.userId, activated.id);
   await tx.user.update({ where: { id: activated.userId }, data: { isTrialUser: false } });
   return activated;
 };
